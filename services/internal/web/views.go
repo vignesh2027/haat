@@ -220,11 +220,16 @@ func (s *Server) basePage(snap *snapshot, f *flash) pageData {
 		d.Forecast = append(d.Forecast, fv)
 	}
 	d.DiwaliIn = market.DaysToDiwali(w.Day)
-	for i, l := range snap.Leaders {
+	// Villagers keep the market moving but are not in the running: they
+	// gather every day whether anyone plays or not.
+	for _, l := range snap.Leaders {
 		head, _, _ := strings.Cut(l.AccountID, ".")
+		if !strings.Contains(head, "-") {
+			continue
+		}
 		d.Leaders = append(d.Leaders, leaderVM{
-			Account: l.AccountID, Rank: i + 1, Name: players.DisplayName(l.AccountID), NetWorth: int64(l.NetWorth),
-			Rescues: l.Rescues, Villager: !strings.Contains(head, "-"),
+			Account: l.AccountID, Rank: len(d.Leaders) + 1, Name: players.DisplayName(l.AccountID),
+			NetWorth: int64(l.NetWorth), Rescues: l.Rescues,
 		})
 	}
 	names := map[string]string{}
