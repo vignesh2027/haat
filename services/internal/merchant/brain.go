@@ -150,14 +150,14 @@ func (b *Brain) Think(ctx context.Context, s Situation, rules Decision) (Decisio
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || len(out.Choices) == 0 {
 		return Decision{}, errors.New("model returned no answer")
 	}
-	return ParseBrain(out.Choices[0].Message.Content, s)
+	return ParseBrain(out.Choices[0].Message.Content, s, rules)
 }
 
 // ParseBrain validates a model answer against the shop's situation: every
 // item the shop trades gets a policy inside the contract's bounds, city
 // trades and crafting are clamped by the same sense the rule book uses, and
 // the note is cleaned to house style.
-func ParseBrain(content string, s Situation) (Decision, error) {
+func ParseBrain(content string, s Situation, rules Decision) (Decision, error) {
 	content = strings.TrimSpace(content)
 	if i := strings.Index(content, "{"); i > 0 {
 		content = content[i:]
@@ -192,6 +192,14 @@ func ParseBrain(content string, s Situation) (Decision, error) {
 		if market.PlaceFor(k) != "" || k == "pickle" {
 			d.CityBuy[k] = v
 		}
+	}
+	// The model may spend on city stock no more than the rule book would, or a
+	// third of the cash box, whichever is more.
+	allowed := max(spendOf(rules.CityBuy, s.World), int64(s.Shop.Kauri)/3)
+	for _, k := range sortedKeys(d.CityBuy) {
+		unit := max(1, (s.World.CityPrice(k)*125+99)/100)
+		d.CityBuy[k] = max(0, min(d.CityBuy[k], allowed/unit))
+		allowed -= d.CityBuy[k] * unit
 	}
 	mango, chilli := s.Shop.StockOf("mango")+d.CityBuy["mango"], s.Shop.StockOf("chilli")+d.CityBuy["chilli"]
 	d.Craft = max(0, min(o.Craft, mango/2, chilli, maxCityTrade))
@@ -290,4 +298,12 @@ func sortedKeys(m map[string]int64) []string {
 	}
 	sort.Strings(k)
 	return k
+}
+
+func spendOf(buys map[string]int64, w market.World) int64 {
+	var total int64
+	for k, n := range buys {
+		total += n * max(1, (w.CityPrice(k)*125+99)/100)
+	}
+	return total
 }

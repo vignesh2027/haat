@@ -50,9 +50,18 @@ pub const CHRONICLE_MIN_INVEST: u128 = 100;
 /// NEAR an outside account deposits once to receive tokens by standard transfer.
 pub const STORAGE_DEPOSIT: NearToken = NearToken::from_millinear(10);
 
+/// Collection prefixes. Prefixes 0 to 6 held the first testnet world, which
+/// was replaced with `reset_world`; they are never read again.
 #[derive(BorshStorageKey)]
 #[near]
 enum StorageKey {
+    _FirstWorld0,
+    _FirstWorld1,
+    _FirstWorld2,
+    _FirstWorld3,
+    _FirstWorld4,
+    _FirstWorld5,
+    _FirstWorld6,
     Balances,
     Supply,
     Merchants,
@@ -346,6 +355,14 @@ impl Market {
         }
         m.log_chronicle("season_garmi", None, None, None);
         m
+    }
+
+    /// Starts a fresh world on an already deployed market, ignoring the old
+    /// state. Only the market account itself can call it.
+    #[init(ignore_state)]
+    #[private]
+    pub fn reset_world(owner_id: AccountId, world_seed: u64) -> Self {
+        Self::new(owner_id, world_seed)
     }
 
     // ---------- owner ----------

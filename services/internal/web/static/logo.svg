@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="t">
+  <title id="t">Haat</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B82F6"/>
+      <stop offset="0.55" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#4C1D95"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFDF7"/>
+      <stop offset="1" stop-color="#F6E7C8"/>
+    </linearGradient>
+  </defs>
+  <!-- tile -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <!-- market awning: four scalloped stripes -->
+  <g>
+    <path d="M72 92h92v74a46 46 0 0 1-92 0z" fill="#FFFFFF"/>
+    <path d="M164 92h92v74a46 46 0 0 1-92 0z" fill="#BFDBFE"/>
+    <path d="M256 92h92v74a46 46 0 0 1-92 0z" fill="#FFFFFF"/>
+    <path d="M348 92h92v74a46 46 0 0 1-92 0z" fill="#BFDBFE"/>
+    <rect x="72" y="80" width="368" height="20" rx="10" fill="#0B1B33" opacity=".18"/>
+  </g>
+  <!-- cowrie shell (kauri), the village money: domed back, toothed opening -->
+  <g transform="rotate(-14 256 340)">
+    <path d="M256 210c66 0 112 58 112 132s-50 126-112 126-112-54-112-126 46-132 112-132z" fill="url(#shell)"/>
+    <path d="M256 210c66 0 112 58 112 132s-50 126-112 126-112-54-112-126 46-132 112-132z" fill="none" stroke="#0B1B33" stroke-opacity=".14" stroke-width="6"/>
+    <ellipse cx="214" cy="276" rx="26" ry="40" fill="#FFFFFF" opacity=".75" transform="rotate(-20 214 276)"/>
+    <path d="M256 244c10 30 12 64 12 94s-2 64-12 94c-10-30-12-64-12-94s2-64 12-94z" fill="#4C1D95"/>
+    <path d="M248.7 262h-11M263.3 262h11M246.3 281h-11M265.7 281h11M245.0 300h-11M267.0 300h11M244.2 319h-11M267.8 319h11M244.0 338h-11M268.0 338h11M244.2 357h-11M267.8 357h11M245.0 376h-11M267.0 376h11M246.3 395h-11M265.7 395h11M248.7 414h-11M263.3 414h11" stroke="#4C1D95" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>

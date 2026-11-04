@@ -235,6 +235,22 @@ func (a *app) bootstrap(ctx context.Context) error {
 		}
 	}
 	// 5. Villagers: NPC players that keep the market moving.
+	if raw := a.env.Get("HAAT_VILLAGERS"); raw != "" {
+		// After a market redeploy, existing villagers need their starter purse again.
+		var regs []near.Action
+		for _, entry := range strings.Split(raw, ",") {
+			handle, _, _ := strings.Cut(entry, "=")
+			if p, err := mc.Player(ctx, handle+"."+root.ID); err == nil && !p.Registered {
+				regs = append(regs, market.RegisterPlayer(handle+"."+root.ID))
+			}
+		}
+		if len(regs) > 0 {
+			if _, err := root.Send(ctx, marketID, regs...); err != nil {
+				return fmt.Errorf("register villagers: %w", err)
+			}
+			fmt.Println("registered", len(regs), "villagers")
+		}
+	}
 	if a.env.Get("HAAT_VILLAGERS") == "" {
 		var entries []string
 		for _, v := range world.VillagerRoster {
@@ -408,4 +424,41 @@ func (a *app) villagers(rootID string) ([]*world.Villager, error) {
 		})
 	}
 	return out, nil
+}
+
+// resetMarket deploys the current contract code to the market account and
+// starts a fresh world there (all game state is replaced). Shopkeeper,
+// villager and player accounts stay; run bootstrap afterwards to reopen the
+// shops and register the villagers.
+func (a *app) resetMarket(ctx context.Context) error {
+	marketID, err := a.marketID()
+	if err != nil {
+		return err
+	}
+	root, err := a.root()
+	if err != nil {
+		return err
+	}
+	raw, err := a.env.Must("HAAT_MARKET_KEY")
+	if err != nil {
+		return err
+	}
+	k, err := near.ParseSecretKey(raw)
+	if err != nil {
+		return err
+	}
+	code, err := os.ReadFile(a.env.Or("HAAT_WASM", "contract/target/near/haat_market.wasm"))
+	if err != nil {
+		return fmt.Errorf("read contract wasm (build it with make contract): %w", err)
+	}
+	seed := a.worldSeed()
+	out, err := near.NewAccount(a.rpc, marketID, k).Send(ctx, marketID,
+		near.DeployContract{Code: code},
+		near.CallArgs("reset_world", map[string]any{"owner_id": root.ID, "world_seed": seed}, 50),
+	)
+	if err != nil {
+		return fmt.Errorf("reset %s: %w", marketID, err)
+	}
+	fmt.Println("deployed fresh code and a new world to", marketID, a.explorer(out.Hash))
+	return nil
 }

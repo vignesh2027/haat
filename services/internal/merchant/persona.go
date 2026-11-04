@@ -276,9 +276,15 @@ func clampCity(s Situation, d *Decision) {
 		d.CityBuy = map[string]int64{}
 	}
 	for k, v := range d.CitySell {
-		avail := s.Shop.StockOf(k)
-		if k == "pickle" {
-			avail += d.Craft // crafted earlier in the same transaction
+		// City buys and crafting run earlier in the same transaction.
+		avail := s.Shop.StockOf(k) + d.CityBuy[k]
+		switch k {
+		case "pickle":
+			avail += d.Craft
+		case "mango":
+			avail -= 2 * d.Craft
+		case "chilli":
+			avail -= d.Craft
 		}
 		if v > avail {
 			v = avail

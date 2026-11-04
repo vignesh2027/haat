@@ -382,3 +382,6 @@ small { display: block; color: var(--muted); font-size: 12.5px; }
 .src { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--soft); color: var(--primary-ink); }
 .src-model { background: var(--violet-soft); color: var(--violet); }
 .when { display: inline; }
+
+.brand-logo { display: block; width: 34px; height: 34px; filter: drop-shadow(0 3px 6px rgba(37, 99, 235, .3)); }
+.hero-logo { display: block; width: 96px; height: 96px; margin-bottom: 18px; filter: drop-shadow(0 12px 24px rgba(37, 99, 235, .35)); }

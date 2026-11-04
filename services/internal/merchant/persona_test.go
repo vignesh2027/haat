@@ -188,7 +188,7 @@ func TestParseBrainClampsToContractBounds(t *testing.T) {
 	spec, _ := ByKey("lakshmi")
 	s := Situation{Spec: spec, Shop: shop("lakshmi", 2500, map[string]int64{"mango": 9, "pickle": 3}), World: world("garmi", false)}
 	d, err := ParseBrain(`Here you go: {"policies":[{"token_id":"mango","target_stock":900,"margin_bps":50},{"token_id":"pickle","target_stock":5,"margin_bps":1200}],
-	  "city_sell":{"pickle":2,"gold":5},"city_buy":{"chilli":4},"craft":40,"note":"Mangoes are cheap — I will make pickle -> sell at Diwali."}`, s)
+	  "city_sell":{"pickle":2,"gold":5},"city_buy":{"chilli":4},"craft":40,"note":"Mangoes are cheap — I will make pickle -> sell at Diwali."}`, s, Decide(s))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,14 +209,14 @@ func TestParseBrainClampsToContractBounds(t *testing.T) {
 func TestParseBrainRejectsIncompleteAnswers(t *testing.T) {
 	spec, _ := ByKey("ramu")
 	s := Situation{Spec: spec, Shop: shop("ramu", 3000, nil), World: world("garmi", false)}
-	if _, err := ParseBrain(`{"policies":[{"token_id":"rice","target_stock":10,"margin_bps":2000}],"note":"x"}`, s); err == nil {
+	if _, err := ParseBrain(`{"policies":[{"token_id":"rice","target_stock":10,"margin_bps":2000}],"note":"x"}`, s, Decision{}); err == nil {
 		t.Fatal("a missing item policy must fall back to the rule book")
 	}
-	if _, err := ParseBrain(`not json`, s); err == nil {
+	if _, err := ParseBrain(`not json`, s, Decision{}); err == nil {
 		t.Fatal("non-JSON must fall back")
 	}
 	flood := Situation{Spec: spec, Shop: shop("ramu", 3000, map[string]int64{"rice": 90}), World: world("barsaat", true)}
-	d, err := ParseBrain(`{"policies":[{"token_id":"rice","target_stock":10,"margin_bps":2000},{"token_id":"mango","target_stock":10,"margin_bps":2000}],"city_sell":{"rice":50},"note":"Sell rice."}`, flood)
+	d, err := ParseBrain(`{"policies":[{"token_id":"rice","target_stock":10,"margin_bps":2000},{"token_id":"mango","target_stock":10,"margin_bps":2000}],"city_sell":{"rice":50},"note":"Sell rice."}`, flood, Decision{})
 	if err != nil || len(d.CitySell) != 0 {
 		t.Fatalf("no city trades on flood days, whatever the model says: %+v %v", d.CitySell, err)
 	}
@@ -230,5 +230,26 @@ func TestBrainBudget(t *testing.T) {
 	}
 	if (&Brain{}).Enabled() {
 		t.Fatal("no key, no brain")
+	}
+}
+
+func TestModelCannotOverspendOrSellWhatItCrafts(t *testing.T) {
+	spec, _ := ByKey("ramu")
+	s := Situation{Spec: spec, Shop: shop("ramu", 3000, map[string]int64{"rice": 10, "mango": 10}), World: world("garmi", false)}
+	d, err := ParseBrain(`{"policies":[{"token_id":"rice","target_stock":10,"margin_bps":2000},{"token_id":"mango","target_stock":10,"margin_bps":2000}],"city_buy":{"rice":50,"fish":50},"note":"Stocking up."}`, s, Decide(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spend := spendOf(d.CityBuy, s.World); spend > 1000 {
+		t.Fatalf("the model spent %d of 3000 on city stock", spend)
+	}
+	l, _ := ByKey("lakshmi")
+	ls := Situation{Spec: l, Shop: shop("lakshmi", 2500, map[string]int64{"mango": 15, "chilli": 7}), World: world("garmi", false)}
+	d, err = ParseBrain(`{"policies":[{"token_id":"mango","target_stock":10,"margin_bps":1500},{"token_id":"pickle","target_stock":4,"margin_bps":1500}],"craft":7,"city_sell":{"mango":15},"note":"Pickle day."}`, ls, Decide(ls))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.CitySell["mango"] > 15-2*d.Craft {
+		t.Fatalf("cannot sell mangoes already used for pickle: craft %d, sell %d", d.Craft, d.CitySell["mango"])
 	}
 }

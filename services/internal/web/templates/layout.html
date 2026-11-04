@@ -10,12 +10,14 @@
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{css}}">
 {{if .FF.Running}}<meta http-equiv="refresh" content="4">{{end}}
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐚</text></svg>">
+<link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+<link rel="icon" type="image/png" sizes="512x512" href="/static/logo-512.png">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 </head>
 <body class="page-{{.Page}}{{if .World.Flood}} is-flood{{end}} season-{{.World.Season}}" data-pending="{{.Pending}}">
 <a id="top"></a>
 <header class="topbar">
-  <a class="brand" href="/"><span class="brand-shell" aria-hidden="true">🐚</span><span class="brand-word">Haat</span></a>
+  <a class="brand" href="/"><img class="brand-logo" src="/static/logo.svg" alt="" width="34" height="34"><span class="brand-word">Haat</span></a>
   <div class="daychip" title="Game day {{.World.Day}}">
     <span class="daychip-day">Day {{.World.Day}}</span>
     <span class="daychip-season">{{.Weather}} {{.Season}}</span>
