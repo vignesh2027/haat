@@ -4,6 +4,7 @@ package market
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strconv"
 
 	"haat/internal/near"
@@ -367,3 +368,32 @@ func BaseYield(season, item string) int64 {
 	}
 	return t[season][item]
 }
+
+// LeaderRow is one player's standing.
+type LeaderRow struct {
+	AccountID string `json:"account_id"`
+	Kauri     U128   `json:"kauri"`
+	NetWorth  U128   `json:"net_worth"`
+	Rescues   int    `json:"rescues"`
+}
+
+// Leaderboard reads every player's standing, sorted by net worth, richest first.
+func (c *Client) Leaderboard(ctx context.Context) ([]LeaderRow, error) {
+	var all []LeaderRow
+	for from := 0; ; from += 100 {
+		var page []LeaderRow
+		if err := c.RPC.View(ctx, c.Contract, "leaderboard", map[string]any{"from_index": from, "limit": 100}, &page); err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if len(page) < 100 || from > 5000 {
+			break
+		}
+	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].NetWorth > all[j].NetWorth })
+	return all, nil
+}
+
+// DaysToDiwali is how many game days remain until the festival day, the last
+// day of the festival season (day 20 of each 21-day year).
+func DaysToDiwali(day int) int { return ((20-day%21)%21 + 21) % 21 }

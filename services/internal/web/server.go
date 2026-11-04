@@ -69,6 +69,7 @@ type snapshot struct {
 	World     market.World
 	Merchants []market.Merchant
 	Chronicle []market.ChronicleEntry
+	Leaders   []market.LeaderRow
 }
 
 // New builds a server. cookieSecret is 64 hex characters.
@@ -161,9 +162,10 @@ func (s *Server) snapshot(ctx context.Context, fresh bool) (*snapshot, error) {
 	}
 	s.mu.Unlock()
 	var snap snapshot
-	var wErr, mErr, cErr error
+	var wErr, mErr, cErr, lErr error
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
+	go func() { defer wg.Done(); snap.Leaders, lErr = s.Market.Leaderboard(ctx) }()
 	go func() { defer wg.Done(); snap.World, wErr = s.Market.World(ctx) }()
 	go func() { defer wg.Done(); snap.Merchants, mErr = s.Market.Merchants(ctx) }()
 	go func() {
@@ -176,7 +178,7 @@ func (s *Server) snapshot(ctx context.Context, fresh bool) (*snapshot, error) {
 		snap.Chronicle, cErr = s.Market.Chronicle(ctx, max(n-60, 0), 60)
 	}()
 	wg.Wait()
-	if err := errors.Join(wErr, mErr, cErr); err != nil {
+	if err := errors.Join(wErr, mErr, cErr, lErr); err != nil {
 		return nil, err
 	}
 	s.mu.Lock()
@@ -233,6 +235,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		data.Flash = &flash{Kind: "ok", Text: summarise(done)}
 	}
 	data.Page = "village"
+	data.markYou(sess.Account)
 	data.Title = "The haat, day " + strconv.Itoa(snap.World.Day)
 	data.Player = buildPlayer(sess, pv, snap)
 	data.Stalls = s.buildStalls(snap, &pv)
@@ -558,6 +561,7 @@ func (s *Server) marketPage(w http.ResponseWriter, r *http.Request) {
 	data.Title = "Market dashboard"
 	if sess, ok := s.readSession(r); ok {
 		data.Player = &playerVM{Name: players.DisplayName(sess.Account), Account: sess.Account}
+		data.markYou(sess.Account)
 	}
 	data.Stalls = s.buildStalls(snap, nil)
 	data.Dash = buildDashboard(snap, append(hist, today))

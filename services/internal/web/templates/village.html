@@ -135,6 +135,13 @@
 </section>
 
 <aside class="col col-right">
+  <section class="card goal">
+    <h2>🪔 Diwali in {{if eq .DiwaliIn 0}}<b>today</b>{{else}}{{.DiwaliIn}} {{if eq .DiwaliIn 1}}day{{else}}days{{end}}{{end}}</h2>
+    <p class="sub">The richest trader on Diwali, the last day of the festival season, is the village's seth for the year. Rescuing a closed shop earns a lamp.{{if .YourRank}} You are <b>#{{.YourRank}}</b> of {{len .Leaders}}.{{end}}</p>
+    <ol class="board">
+      {{range .TopLeaders 5}}<li class="{{if .You}}you{{end}}"><span class="rk">{{.Rank}}</span><span class="nm">{{.Name}}{{if .Villager}} <small class="vl">villager</small>{{end}}{{if .You}} <small class="vl">you</small>{{end}}</span>{{if .Rescues}}<span class="lamps" title="Shops rescued">{{range $i, $_ := (lamps .Rescues)}}🪔{{end}}</span>{{end}}<b>🐚 {{num .NetWorth}}</b></li>{{end}}
+    </ol>
+  </section>
   <section class="card panchang">
     <h2>Panchang <span class="hi">almanac</span></h2>
     <ul class="fc">

@@ -50,6 +50,17 @@
   {{end}}
 
   <div class="dash-cols">
+  <section class="card leaders">
+    <h2>Village leaderboard</h2>
+    <p class="sub">Net worth: kauri, goods at today's city prices, shares at their part of the shop, and dividends waiting. 🪔 marks a shop rescued. Diwali in {{.DiwaliIn}} days.</p>
+    <table class="tbl">
+      <thead><tr><th>#</th><th>Trader</th><th>Net worth</th><th>Rescues</th></tr></thead>
+      <tbody>
+      {{range .TopLeaders 15}}<tr class="{{if .You}}row-you{{end}}"><td>{{.Rank}}</td><td>{{.Name}}{{if .Villager}} <small class="vl">villager</small>{{end}}{{if .You}} <small class="vl">you</small>{{end}}</td><td>🐚 {{num .NetWorth}}</td><td>{{if .Rescues}}{{range $i, $_ := (lamps .Rescues)}}🪔{{end}}{{else}}<span class="muted">none</span>{{end}}</td></tr>{{end}}
+      </tbody>
+    </table>
+  </section>
+
     <section class="card">
       <h2>Today at the stalls</h2>
       <div class="tbl-wrap"><table class="tbl">

@@ -37,6 +37,18 @@ type pageData struct {
 	FF        world.FastForward
 	FFLeft    int
 	Pending   int
+	Leaders   []leaderVM
+	YourRank  int
+	DiwaliIn  int
+}
+
+type leaderVM struct {
+	Account       string
+	Rank          int
+	Name          string
+	NetWorth      int64
+	Rescues       int
+	You, Villager bool
 }
 
 type playerVM struct {
@@ -200,6 +212,14 @@ func (s *Server) basePage(snap *snapshot, f *flash) pageData {
 		}
 		d.Forecast = append(d.Forecast, fv)
 	}
+	d.DiwaliIn = market.DaysToDiwali(w.Day)
+	for i, l := range snap.Leaders {
+		head, _, _ := strings.Cut(l.AccountID, ".")
+		d.Leaders = append(d.Leaders, leaderVM{
+			Account: l.AccountID, Rank: i + 1, Name: players.DisplayName(l.AccountID), NetWorth: int64(l.NetWorth),
+			Rescues: l.Rescues, Villager: !strings.Contains(head, "-"),
+		})
+	}
 	names := map[string]string{}
 	for _, m := range snap.Merchants {
 		names[m.AccountID] = m.Name
@@ -256,6 +276,27 @@ func chronicleLine(c market.ChronicleEntry, names map[string]string) (chronVM, b
 		return v, false
 	}
 	return v, true
+}
+
+// markYou flags the player's own row and records their rank.
+func (d *pageData) markYou(account string) {
+	for i := range d.Leaders {
+		if d.Leaders[i].Account == account {
+			d.Leaders[i].You = true
+			d.YourRank = d.Leaders[i].Rank
+		}
+	}
+}
+
+// TopLeaders is the first n rows, plus the player's own row if it is lower.
+func (d pageData) TopLeaders(n int) []leaderVM {
+	var out []leaderVM
+	for i, l := range d.Leaders {
+		if i < n || l.You {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 func buildPlayer(sess Session, pv market.Player, snap *snapshot) *playerVM {
@@ -393,6 +434,7 @@ func funcs(s *Server) template.FuncMap {
 			return b.String()
 		},
 		"isLocal": func() bool { return s.Network == "localnet" },
+		"lamps":   func(n int) []struct{} { return make([]struct{}, min(n, 5)) },
 		"css":     func() string { return "/static/haat.css?v=" + cssVersion },
 		"ffpct": func(f world.FastForward) int {
 			if f.Of == 0 {
