@@ -193,6 +193,34 @@ func ParseBrain(content string, s Situation, rules Decision) (Decision, error) {
 			d.CityBuy[k] = v
 		}
 	}
+	// Buying and selling the same item in one go only pays the city twice.
+	for k := range d.CitySell {
+		if d.CityBuy[k] > 0 {
+			if d.CityBuy[k] >= d.CitySell[k] {
+				d.CityBuy[k] -= d.CitySell[k]
+				delete(d.CitySell, k)
+			} else {
+				d.CitySell[k] -= d.CityBuy[k]
+				delete(d.CityBuy, k)
+			}
+		}
+	}
+	// The city cart pays only 80% of the city price, so a shop sends it only
+	// stock above its own target, or what the rule book would send.
+	targets := map[string]int64{}
+	for _, p := range d.Policies {
+		targets[p.TokenID] = int64(p.TargetStock)
+	}
+	for k, v := range d.CitySell {
+		limit := rules.CitySell[k]
+		if t, ok := targets[k]; ok {
+			limit = max(limit, s.Shop.StockOf(k)-t)
+		}
+		if k == "pickle" {
+			limit = max(limit, int64(o.Craft)) // pickle made today may go straight to the city
+		}
+		d.CitySell[k] = min(v, max(limit, 0))
+	}
 	// The model may spend on city stock no more than the rule book would, or a
 	// third of the cash box, whichever is more.
 	allowed := max(spendOf(rules.CityBuy, s.World), int64(s.Shop.Kauri)/3)

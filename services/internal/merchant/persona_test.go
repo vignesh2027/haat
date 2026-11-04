@@ -253,3 +253,15 @@ func TestModelCannotOverspendOrSellWhatItCrafts(t *testing.T) {
 		t.Fatalf("cannot sell mangoes already used for pickle: craft %d, sell %d", d.Craft, d.CitySell["mango"])
 	}
 }
+
+func TestModelKeepsStockOnTheShelf(t *testing.T) {
+	spec, _ := ByKey("meena")
+	s := Situation{Spec: spec, Shop: shop("meena", 3000, map[string]int64{"chilli": 30, "pickle": 3}), World: world("garmi", false)}
+	d, err := ParseBrain(`{"policies":[{"token_id":"chilli","target_stock":25,"margin_bps":600},{"token_id":"pickle","target_stock":6,"margin_bps":600}],"city_sell":{"chilli":30,"pickle":3},"city_buy":{"chilli":5},"note":"Clearing out."}`, s, Decision{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.CitySell["chilli"] > 5 || d.CitySell["pickle"] > 0 || d.CityBuy["chilli"] > 0 {
+		t.Fatalf("only stock above target goes to the city, and never buy and sell together: sell %v buy %v", d.CitySell, d.CityBuy)
+	}
+}

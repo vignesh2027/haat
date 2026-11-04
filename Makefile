@@ -1,4 +1,4 @@
-.PHONY: all contract build test test-unit test-contract test-sandbox test-go bootstrap smoke status serve localnet localnet-reset fast-forward clean
+.PHONY: all contract build test test-unit test-contract test-sandbox test-go bootstrap smoke status serve localnet localnet-reset fast-forward deploy clean
 
 WASM := contract/target/near/haat_market.wasm
 
@@ -53,6 +53,11 @@ localnet-reset: build
 ## Play a week back to back against the running local node and print what happened.
 fast-forward: build
 	./bin/haat -env .localnet/env fast-forward
+
+## Host the game on Modal (needs the modal CLI and a bootstrapped .env).
+deploy:
+	cd services && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ../bin/haat-linux-amd64 ./cmd/haat
+	modal deploy deploy/modal_app.py
 
 clean:
 	rm -rf bin contract/target
