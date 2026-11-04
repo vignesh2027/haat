@@ -81,6 +81,13 @@ type stallVM struct {
 	Note, Voice                           string
 	Mood                                  string
 	Shelves                               []shelfVM
+	Thoughts                              []thoughtVM
+	GasNEAR                               string
+}
+
+type thoughtVM struct {
+	When, Source, Note, Suggested, Chosen, Why, Tx string
+	Model                                          bool
 }
 
 type shelfVM struct {
@@ -340,6 +347,21 @@ func (s *Server) buildStalls(snap *snapshot, pv *market.Player) []stallVM {
 		}
 		if m.Note != "" {
 			st.Voice = s.Voice.Line(spec, m.Note)
+		}
+		if s.Keeper != nil {
+			for _, a := range s.Keeper.Agents {
+				if a.Account.ID != m.AccountID {
+					continue
+				}
+				for _, t := range a.Thoughts(3) {
+					tv := thoughtVM{When: ago(t.At), Note: t.Note, Suggested: t.Suggested, Chosen: t.Chosen, Why: t.Why, Tx: t.TxHash, Model: t.Source == "model"}
+					tv.Source = "rule book"
+					if tv.Model {
+						tv.Source = "thought it through"
+					}
+					st.Thoughts = append(st.Thoughts, tv)
+				}
+			}
 		}
 		switch {
 		case !m.Open:

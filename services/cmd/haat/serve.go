@@ -54,7 +54,7 @@ func (a *app) keeper() (*world.Keeper, *near.Account, *market.Client, error) {
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		k.Agents = append(k.Agents, &merchant.Agent{Spec: spec, Account: acct, Market: mc})
+		k.Agents = append(k.Agents, &merchant.Agent{Spec: spec, Account: acct, Market: mc, Brain: a.brain()})
 	}
 	return k, root, mc, nil
 }
@@ -75,6 +75,9 @@ func (a *app) serve(ctx context.Context) error {
 	srv.Root, srv.Market, srv.Keeper = root, mc, k
 	srv.Relayer = k.Relayer
 	srv.Voice = merchant.NewVoice(a.env.Get("GROQ_API_KEY"))
+	if a.brain().Enabled() {
+		srv.Voice = nil // shopkeepers write their own notes with the model
+	}
 	if m := a.env.Get("HAAT_VOICE_MODEL"); m != "" {
 		srv.Voice.Model = m
 	}
@@ -163,6 +166,11 @@ func (a *app) fastForward(ctx context.Context) error {
 		return fmt.Errorf("fast-forward stopped: %s", st.Err)
 	}
 	fmt.Printf("\n%d days in %s\n", days, time.Since(start).Round(time.Second))
+	for _, ag := range k.Agents {
+		for _, t := range ag.Thoughts(20) {
+			fmt.Printf("%-13s %-6s %s\n", ag.Spec.Name, t.Source, t.Note)
+		}
+	}
 	n, _ := mc.ChronicleLen(ctx)
 	entries, _ := mc.Chronicle(ctx, max(n-30, 0), 30)
 	for _, e := range entries {
@@ -173,4 +181,19 @@ func (a *app) fastForward(ctx context.Context) error {
 		fmt.Printf("chronicle day %2d %-14s %s\n", e.Day, e.Kind, who)
 	}
 	return a.status(ctx)
+}
+
+var sharedBrain *merchant.Brain
+
+// brain is the shopkeepers' shared model client (one rate budget for all
+// four). HAAT_AGENT_BRAIN=rules turns it off.
+func (a *app) brain() *merchant.Brain {
+	if sharedBrain == nil {
+		key := a.env.Get("GROQ_API_KEY")
+		if a.env.Get("HAAT_AGENT_BRAIN") == "rules" {
+			key = ""
+		}
+		sharedBrain = merchant.NewBrain(key, a.env.Get("HAAT_AGENT_MODEL"))
+	}
+	return sharedBrain
 }

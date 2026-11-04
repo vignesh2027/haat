@@ -369,3 +369,16 @@ small { display: block; color: var(--muted); font-size: 12.5px; }
 .dash-cols { grid-template-columns: 1fr 1fr 1fr; }
 @media (max-width: 1240px) { .dash-cols { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 960px) { .dash-cols { grid-template-columns: 1fr; } }
+
+/* A shopkeeper's recent decisions */
+.mind { margin: -2px 0 10px; font-size: 13px; }
+.mind summary { cursor: pointer; color: var(--violet); font-weight: 600; font-size: 12.5px; list-style: none; }
+.mind summary::-webkit-details-marker { display: none; }
+.mind summary::before { content: "+ "; }
+.mind[open] summary::before { content: "- "; }
+.mind ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.mind li { background: var(--softer); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; }
+.mind li p { margin: 4px 0; }
+.src { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--soft); color: var(--primary-ink); }
+.src-model { background: var(--violet-soft); color: var(--violet); }
+.when { display: inline; }

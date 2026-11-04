@@ -250,6 +250,9 @@ func decideLakshmi(s Situation, d *Decision) {
 	if season == "garmi" {
 		d.Reasons = append(d.Reasons, "Mango season. I buy mangoes for pickle, but not at any price.")
 	}
+	if len(d.Reasons) == 0 {
+		d.Reasons = append(d.Reasons, "Steady work: I keep a few jars of pickle on the shelf and wait for mango season.")
+	}
 }
 
 // clampCity applies shared sense: cash crunches, the contract's trade limit,

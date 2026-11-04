@@ -183,3 +183,52 @@ func TestMeenaTurnsCarefulWithInvestors(t *testing.T) {
 		t.Fatal("rich Meena is bold again")
 	}
 }
+
+func TestParseBrainClampsToContractBounds(t *testing.T) {
+	spec, _ := ByKey("lakshmi")
+	s := Situation{Spec: spec, Shop: shop("lakshmi", 2500, map[string]int64{"mango": 9, "pickle": 3}), World: world("garmi", false)}
+	d, err := ParseBrain(`Here you go: {"policies":[{"token_id":"mango","target_stock":900,"margin_bps":50},{"token_id":"pickle","target_stock":5,"margin_bps":1200}],
+	  "city_sell":{"pickle":2,"gold":5},"city_buy":{"chilli":4},"craft":40,"note":"Mangoes are cheap — I will make pickle -> sell at Diwali."}`, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Policies[0].TargetStock != 200 || d.Policies[0].MarginBps != 200 {
+		t.Fatalf("levers must be clamped to the contract bounds: %+v", d.Policies[0])
+	}
+	if _, ok := d.CitySell["gold"]; ok {
+		t.Fatal("unknown items are dropped")
+	}
+	if d.Craft != 4 {
+		t.Fatalf("craft is limited by mangoes and chillies on hand: %d", d.Craft)
+	}
+	if strings.ContainsAny(d.Note, "—→") || strings.Contains(d.Note, "->") {
+		t.Fatalf("note must follow house style: %q", d.Note)
+	}
+}
+
+func TestParseBrainRejectsIncompleteAnswers(t *testing.T) {
+	spec, _ := ByKey("ramu")
+	s := Situation{Spec: spec, Shop: shop("ramu", 3000, nil), World: world("garmi", false)}
+	if _, err := ParseBrain(`{"policies":[{"token_id":"rice","target_stock":10,"margin_bps":2000}],"note":"x"}`, s); err == nil {
+		t.Fatal("a missing item policy must fall back to the rule book")
+	}
+	if _, err := ParseBrain(`not json`, s); err == nil {
+		t.Fatal("non-JSON must fall back")
+	}
+	flood := Situation{Spec: spec, Shop: shop("ramu", 3000, map[string]int64{"rice": 90}), World: world("barsaat", true)}
+	d, err := ParseBrain(`{"policies":[{"token_id":"rice","target_stock":10,"margin_bps":2000},{"token_id":"mango","target_stock":10,"margin_bps":2000}],"city_sell":{"rice":50},"note":"Sell rice."}`, flood)
+	if err != nil || len(d.CitySell) != 0 {
+		t.Fatalf("no city trades on flood days, whatever the model says: %+v %v", d.CitySell, err)
+	}
+}
+
+func TestBrainBudget(t *testing.T) {
+	b := NewBrain("key", "")
+	b.TokensPerMinute = estTokensPerCall * 2
+	if !b.take() || !b.take() || b.take() {
+		t.Fatal("the token budget should allow two calls then refuse")
+	}
+	if (&Brain{}).Enabled() {
+		t.Fatal("no key, no brain")
+	}
+}

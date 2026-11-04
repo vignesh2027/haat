@@ -2,8 +2,11 @@ package merchant
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"haat/internal/market"
 	"haat/internal/near"
@@ -15,6 +18,30 @@ type Agent struct {
 	Spec    Spec
 	Account *near.Account
 	Market  *market.Client
+	Brain   *Brain // optional: the open model that chooses the levers
+
+	mu       sync.Mutex
+	thoughts []Thought
+}
+
+// Thoughts returns the agent's latest decisions, newest first.
+func (a *Agent) Thoughts(n int) []Thought {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var out []Thought
+	for i := len(a.thoughts) - 1; i >= 0 && len(out) < n; i-- {
+		out = append(out, a.thoughts[i])
+	}
+	return out
+}
+
+func (a *Agent) remember(t Thought) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.thoughts = append(a.thoughts, t)
+	if len(a.thoughts) > 20 {
+		a.thoughts = a.thoughts[len(a.thoughts)-20:]
+	}
 }
 
 // Action is a record of what an agent signed, for the village feed.
@@ -57,8 +84,24 @@ func (a *Agent) review(ctx context.Context, settle bool) (Decision, *Action, err
 	if !found {
 		return Decision{}, nil, fmt.Errorf("%s is not a shop in the market", a.Account.ID)
 	}
-	d := Decide(Situation{Spec: a.Spec, Shop: me, World: w})
-	changed := !d.Empty(me) || d.Note != me.Note
+	sit := Situation{Spec: a.Spec, Shop: me, World: w}
+	rules := Decide(sit)
+	d := rules
+	thought := Thought{At: time.Now(), Source: "rules", Suggested: Summary(rules)}
+	if a.Brain.Enabled() {
+		md, err := a.Brain.Think(ctx, sit, rules)
+		if err == nil {
+			d, thought.Source = md, "model"
+		} else if errors.Is(err, ErrNoBudget) {
+			thought.Why = "the model's free allowance was used up, so the rule book decided"
+		} else {
+			thought.Why = "the model did not answer usefully, so the rule book decided"
+		}
+	}
+	thought.Chosen, thought.Note = Summary(d), d.Note
+	// A new note alone is not worth a transaction, except in the evening,
+	// when the books are closed anyway.
+	changed := !d.Empty(me) || (settle && d.Note != me.Note)
 	if !changed && (!settle || me.SettledToday) {
 		return d, nil, nil
 	}
@@ -74,6 +117,7 @@ func (a *Agent) review(ctx context.Context, settle bool) (Decision, *Action, err
 	act := &Action{Merchant: a.Spec.Name, Summary: summary}
 	if out != nil {
 		act.TxHash = out.Hash
+		thought.TxHash = out.Hash
 		var v market.U128
 		if settle && len(out.Value) > 0 && v.UnmarshalJSON(out.Value) == nil && v > 0 {
 			act.Summary = strings.TrimPrefix(summary+fmt.Sprintf(", paid %d kauri of dividends", v), ", ")
@@ -81,6 +125,9 @@ func (a *Agent) review(ctx context.Context, settle bool) (Decision, *Action, err
 	}
 	if err != nil {
 		act.Err = err.Error()
+	}
+	if changed && err == nil {
+		a.remember(thought)
 	}
 	if act.Summary == "" {
 		return d, nil, err // a quiet evening: books closed, nothing else to say

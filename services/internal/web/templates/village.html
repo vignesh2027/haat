@@ -61,7 +61,7 @@
     <p class="sub">Hover or tap a price to hear how the shopkeeper set it.</p>
   </div>
   <div class="stalls">
-    {{range .Stalls}}
+    {{range .Stalls}}{{$stall0 := .}}
     <article class="stall stall-{{.Key}}{{if not .Open}} is-closed{{end}}" id="stall-{{.Key}}">
       <div class="awning" aria-hidden="true"></div>
       <header class="stall-head">
@@ -71,6 +71,23 @@
       </header>
       {{if .Note}}<blockquote class="note" title="Note signed on chain: {{.Note}}">{{if .Voice}}{{.Voice}}{{else}}{{.Note}}{{end}}</blockquote>{{end}}
 
+      {{if .Thoughts}}
+      <details class="mind">
+        <summary>How {{.Name}} decided lately</summary>
+        <ul>
+          {{range .Thoughts}}
+          <li>
+            <span class="src {{if .Model}}src-model{{end}}">{{.Source}}</span> <small class="when">{{.When}}</small>
+            <p>{{.Note}}</p>
+            <small>Rule book suggested: {{.Suggested}}.</small>
+            {{if .Model}}<small>Chose: {{.Chosen}}.</small>{{end}}
+            {{if .Why}}<small>{{.Why}}.</small>{{end}}
+            {{if and .Tx $.Explorer}}<a class="onchain" href="{{tx .Tx}}" target="_blank" rel="noopener">signed by {{$stall0.Name}}</a>{{end}}
+          </li>
+          {{end}}
+        </ul>
+      </details>
+      {{end}}
       <div class="shelves">
       {{$stall := .}}
       {{range .Shelves}}
