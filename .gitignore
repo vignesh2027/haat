@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+/target/
+contract/target/
+/bin/
+/data/
+*.log
+.localnet/
+.DS_Store
+keys/
