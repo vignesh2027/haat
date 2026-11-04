@@ -1,4 +1,4 @@
-.PHONY: all contract build test test-unit test-contract test-sandbox test-go bootstrap smoke status serve localnet localnet-reset fast-forward deploy clean
+.PHONY: all contract build test test-unit test-contract test-sandbox test-go bootstrap smoke status serve localnet localnet-reset fast-forward story deploy clean
 
 WASM := contract/target/near/haat_market.wasm
 
@@ -12,8 +12,8 @@ contract:
 build:
 	cd services && go build -o ../bin/haat ./cmd/haat
 
-## Every test: contract unit tests, sandbox integration tests, Go tests.
-test: test-contract test-sandbox test-go
+## Every test: contract unit tests, sandbox integration tests, Go tests, the story week.
+test: test-contract test-sandbox test-go story
 
 ## Fast tests that need no network and no sandbox.
 test-unit: test-contract test-go
@@ -58,6 +58,10 @@ fast-forward: build
 deploy:
 	cd services && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ../bin/haat-linux-amd64 ./cmd/haat
 	modal deploy deploy/modal_app.py
+
+## Play a seeded week on a private local node and check the story beats.
+story: contract
+	cd services && go test -tags story -run TestStoryWeek -count=1 -v ./cmd/haat
 
 clean:
 	rm -rf bin contract/target

@@ -120,7 +120,10 @@ func (s *Server) prepare(ctx context.Context, sess Session, f map[string][]strin
 		if quote.Total == nil || *quote.Total == 0 {
 			return nil, fmt.Errorf("%s will not buy any more %s.", shop.Name, merchant.Plural(token, 2))
 		}
-		if int64(quote.MerchantKauri) < int64(*quote.Total) {
+		if int64(quote.Spendable) < int64(*quote.Total) {
+			if quote.Spendable < quote.MerchantKauri {
+				return nil, fmt.Errorf("%s keeps %d kauri in reserve and can spend only %d today. Try fewer, or another stall.", shop.Name, int64(quote.MerchantKauri)-int64(quote.Spendable), quote.Spendable)
+			}
 			return nil, fmt.Errorf("%s cannot afford that: only %d kauri in the cash box.", shop.Name, quote.MerchantKauri)
 		}
 		name := shop.Name

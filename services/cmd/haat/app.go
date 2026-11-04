@@ -224,7 +224,7 @@ func (a *app) bootstrap(ctx context.Context) error {
 			fmt.Println("created shopkeeper", id, a.explorer(out.Hash))
 		}
 		if !opened[id] {
-			adds = append(adds, market.AddMerchant(id, spec.Name, spec.Items, spec.OpeningKauri, spec.OpeningStock))
+			adds = append(adds, market.AddMerchant(id, spec.Name, spec.Items, spec.OpeningKauri, spec.OpeningStock, spec.Bounds))
 		}
 	}
 	if len(adds) > 0 {
@@ -233,6 +233,18 @@ func (a *app) bootstrap(ctx context.Context) error {
 			return fmt.Errorf("open shops: %w", err)
 		}
 		fmt.Println("opened", len(adds), "shops", a.explorer(out.Hash))
+		// HAAT_START_DAY opens the village a few days into the year, so the
+		// first week holds the turn of the season.
+		if start, err := strconv.Atoi(a.env.Get("HAAT_START_DAY")); err == nil && start > 0 {
+			if w, err := mc.World(ctx); err == nil && w.Day < start {
+				for d := w.Day; d < start; d++ {
+					if _, err := root.Send(ctx, marketID, market.AdvanceDay()); err != nil {
+						return fmt.Errorf("advance to day %d: %w", start, err)
+					}
+				}
+				fmt.Println("the village opens on day", start)
+			}
+		}
 		// Each shopkeeper sets its own prices for the first morning.
 		if k, _, _, err := a.keeper(); err == nil {
 			k.ReviewAll(ctx)
@@ -464,5 +476,5 @@ func (a *app) resetMarket(ctx context.Context) error {
 		return fmt.Errorf("reset %s: %w", marketID, err)
 	}
 	fmt.Println("deployed fresh code and a new world to", marketID, a.explorer(out.Hash))
-	return nil
+	return a.env.Set("HAAT_WORLD_SEED", strconv.FormatUint(seed, 10))
 }

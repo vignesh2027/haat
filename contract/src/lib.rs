@@ -114,6 +114,28 @@ impl Demand {
     }
 }
 
+/// The limits of a shopkeeper's character, set by the owner when the shop
+/// opens. The shopkeeper's own decisions must stay inside them, whoever or
+/// whatever makes those decisions.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Bounds {
+    /// Smallest and largest margin the shopkeeper may set, in basis points.
+    pub margin_min: u32,
+    pub margin_max: u32,
+    /// Largest target stock the shopkeeper may set for any item.
+    pub target_max: u32,
+    /// Cash the shop never spends: it will not buy from players or the city
+    /// below this. Zero for a shopkeeper bold enough to go broke.
+    pub cash_floor: U128,
+}
+
+impl Default for Bounds {
+    fn default() -> Self {
+        Self { margin_min: 200, margin_max: 4_000, target_max: 200, cash_floor: U128(0) }
+    }
+}
+
 #[near(serializers = [borsh])]
 #[derive(Clone)]
 pub struct Merchant {
@@ -128,6 +150,7 @@ pub struct Merchant {
     last_mark: u128,
     last_settle_day: Option<u32>,
     open: bool,
+    bounds: Bounds,
 }
 
 #[near(serializers = [borsh])]
@@ -290,6 +313,7 @@ pub struct MerchantView {
     pub note: String,
     pub note_day: u32,
     pub settled_today: bool,
+    pub bounds: Bounds,
     pub shelves: Vec<ShelfView>,
     pub stock: Vec<(String, U128)>,
 }
@@ -310,6 +334,8 @@ pub struct QuoteView {
     pub stock_factor_bps: U128,
     pub demand_factor_bps: U128,
     pub merchant_kauri: U128,
+    /// Kauri the shop is willing to spend: its purse above its reserve.
+    pub spendable: U128,
     pub open: bool,
 }
 
@@ -367,6 +393,15 @@ impl Market {
 
     // ---------- owner ----------
 
+    /// Changes the limits of a shopkeeper's character.
+    pub fn set_bounds(&mut self, account_id: AccountId, bounds: Bounds) {
+        self.assert_owner();
+        check_bounds(&bounds);
+        let mut m = self.merchant(&account_id);
+        m.bounds = bounds;
+        self.merchants.insert(account_id, m);
+    }
+
     /// Opens a shop. The shop's account will sign its own policies from now on.
     pub fn add_merchant(
         &mut self,
@@ -375,8 +410,11 @@ impl Market {
         items: Vec<String>,
         opening_kauri: U128,
         opening_stock: Vec<U128>,
+        bounds: Option<Bounds>,
     ) {
         self.assert_owner();
+        let bounds = bounds.unwrap_or_default();
+        check_bounds(&bounds);
         require!(
             self.merchants.get(&account_id).is_none(),
             "merchant already exists"
@@ -412,6 +450,7 @@ impl Market {
             last_mark: opening_kauri.0,
             last_settle_day: None,
             open: opening_kauri.0 >= CLOSE_BELOW,
+            bounds,
         };
         self.merchants.insert(account_id.clone(), merchant);
         self.supply.insert(share_token(&account_id), 0);
@@ -538,6 +577,7 @@ impl Market {
             total >= min_total.0,
             format!("price moved: {} offers {total} kauri", m.name)
         );
+        self.require_reserve(&merchant_id, total);
         let purse = self.balance(KAURI, &merchant_id);
         require!(
             purse >= total,
@@ -632,6 +672,17 @@ impl Market {
         require!(note.chars().count() <= MAX_NOTE, "note is too long");
         for p in &policies {
             require!(
+                (m.bounds.margin_min..=m.bounds.margin_max).contains(&p.margin_bps),
+                format!(
+                    "{}'s margin must stay between {} and {} bps",
+                    m.name, m.bounds.margin_min, m.bounds.margin_max
+                )
+            );
+            require!(
+                p.target_stock <= m.bounds.target_max,
+                format!("{}'s target stock must stay at or below {}", m.name, m.bounds.target_max)
+            );
+            require!(
                 (1..=200).contains(&p.target_stock),
                 "target stock must be 1 to 200"
             );
@@ -686,6 +737,7 @@ impl Market {
         );
         require!(pricing::base_price(&token_id).is_some(), "unknown item");
         let total = pricing::city_ask(&token_id, season_of(self.day)) * amount.0;
+        self.require_reserve(&me, total);
         self.internal_burn(KAURI, &me, total, Some("city cart"));
         self.internal_mint(&token_id, &me, amount.0, Some("city cart"));
         self.refresh_open(&me, None);
@@ -854,6 +906,7 @@ impl Market {
             stock_factor_bps: U128(pricing::stock_factor_bps(shelf.stock, shelf.levers.target)),
             demand_factor_bps: U128(pricing::demand_factor_bps(shelf.recent_buys)),
             merchant_kauri: U128(self.balance(KAURI, &merchant_id)),
+            spendable: U128(self.balance(KAURI, &merchant_id).saturating_sub(m.bounds.cash_floor.0)),
             open: self.balance(KAURI, &merchant_id) >= CLOSE_BELOW,
         }
     }
@@ -980,11 +1033,35 @@ impl Market {
 
 // ---------- internals ----------
 
+fn check_bounds(b: &Bounds) {
+    require!(
+        200 <= b.margin_min && b.margin_min <= b.margin_max && b.margin_max <= 4_000,
+        "margins must satisfy 200 <= min <= max <= 4000"
+    );
+    require!((1..=200).contains(&b.target_max), "target_max must be 1 to 200");
+}
+
 pub fn share_token(merchant_id: &AccountId) -> String {
     format!("{SHARE_PREFIX}{merchant_id}")
 }
 
 impl Market {
+    /// A shop never spends the cash its character keeps in reserve.
+    fn require_reserve(&self, id: &AccountId, spend: u128) {
+        let m = self.merchant(id);
+        let purse = self.balance(KAURI, id);
+        let floor = m.bounds.cash_floor.0;
+        require!(
+            purse >= spend.saturating_add(floor),
+            format!(
+                "{} keeps {} kauri in reserve and can spend only {} now",
+                m.name,
+                floor,
+                purse.saturating_sub(floor)
+            )
+        );
+    }
+
     fn assert_owner(&self) {
         require!(
             env::predecessor_account_id() == self.owner_id,
@@ -1061,6 +1138,7 @@ impl Market {
             note: m.note.clone(),
             note_day: m.note_day,
             settled_today: m.last_settle_day == Some(self.day),
+            bounds: m.bounds.clone(),
             shelves,
             stock: ITEMS
                 .iter()

@@ -22,6 +22,47 @@ type Agent struct {
 
 	mu       sync.Mutex
 	thoughts []Thought
+	planDay  int       // game day of the model's current choice
+	plan     *Decision // the model's choice for planDay (levers and note)
+}
+
+// think makes the day's key choice with the model, at most once per game
+// day: later reviews the same day reuse it, and a day that looks like one
+// seen before reuses that day's choice without calling the model.
+func (a *Agent) think(ctx context.Context, sit Situation, rules Decision, t Thought) (Decision, Thought) {
+	day := sit.World.Day
+	a.mu.Lock()
+	plan, planDay := a.plan, a.planDay
+	a.mu.Unlock()
+	if plan != nil && planDay == day {
+		d := rules
+		d.Policies, d.Note, d.Reasons = plan.Policies, plan.Note, plan.Reasons
+		t.Source, t.Why = "model", "today's choice, made earlier"
+		return d, t
+	}
+	sig := Signature(sit)
+	d, ok := a.Brain.Recall(sig, sit, rules)
+	if ok {
+		t.Source, t.Why = "remembered", "a day like this one came before, so it kept that choice"
+	} else {
+		md, err := a.Brain.Think(ctx, sit, rules)
+		switch {
+		case err == nil:
+			d, t.Source = md, "model"
+			a.Brain.Remember(sig, md)
+		case errors.Is(err, ErrNoBudget):
+			t.Why = "the model's free allowance was used up, so the rule book decided"
+			return rules, t
+		default:
+			t.Why = "the model did not answer usefully, so the rule book decided"
+			return rules, t
+		}
+	}
+	a.mu.Lock()
+	cp := d
+	a.plan, a.planDay = &cp, day
+	a.mu.Unlock()
+	return d, t
 }
 
 // Thoughts returns the agent's latest decisions, newest first.
@@ -89,15 +130,9 @@ func (a *Agent) review(ctx context.Context, settle bool) (Decision, *Action, err
 	d := rules
 	thought := Thought{At: time.Now(), Source: "rules", Suggested: Summary(rules)}
 	if a.Brain.Enabled() {
-		md, err := a.Brain.Think(ctx, sit, rules)
-		if err == nil {
-			d, thought.Source = md, "model"
-		} else if errors.Is(err, ErrNoBudget) {
-			thought.Why = "the model's free allowance was used up, so the rule book decided"
-		} else {
-			thought.Why = "the model did not answer usefully, so the rule book decided"
-		}
+		d, thought = a.think(ctx, sit, rules, thought)
 	}
+	ApplyBounds(a.Spec, &d)
 	thought.Chosen, thought.Note = Summary(d), d.Note
 	// A new note alone is not worth a transaction, except in the evening,
 	// when the books are closed anyway.

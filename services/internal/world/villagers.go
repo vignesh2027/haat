@@ -91,7 +91,7 @@ func sellAll(v View, item string, n int64, p *Plan) {
 	for i, amt := range parts {
 		c := cs[i]
 		// Keep well inside what the shop can pay, since prices only fall as it buys.
-		afford := int64(c.m.Kauri) / max(c.bid, 1)
+		afford := c.m.Spendable() / max(c.bid, 1)
 		amt = min(amt, afford*2/3, 50)
 		if amt <= 0 {
 			continue

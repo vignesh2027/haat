@@ -39,6 +39,7 @@ type Brain struct {
 	last      time.Time
 	day       string
 	callsUsed int
+	cache     map[string]cached
 }
 
 // NewBrain returns a brain using Groq's OpenAI-compatible API. An empty key disables it.
@@ -68,7 +69,7 @@ type Thought struct {
 	TxHash    string
 }
 
-const estTokensPerCall = 900
+const estTokensPerCall = 750
 
 func (b *Brain) take() bool {
 	b.mu.Lock()
@@ -99,11 +100,8 @@ func (b *Brain) take() bool {
 var ErrNoBudget = errors.New("model allowance used up for now")
 
 type brainOut struct {
-	Policies []market.Policy  `json:"policies"`
-	CitySell map[string]int64 `json:"city_sell"`
-	CityBuy  map[string]int64 `json:"city_buy"`
-	Craft    int64            `json:"craft"`
-	Note     string           `json:"note"`
+	Policies []market.Policy `json:"policies"`
+	Note     string          `json:"note"`
 }
 
 // Think asks the model for a decision. rules is the rule book's proposal,
@@ -118,7 +116,7 @@ func (b *Brain) Think(ctx context.Context, s Situation, rules Decision) (Decisio
 	body, _ := json.Marshal(map[string]any{
 		"model":            b.Model,
 		"temperature":      0.5,
-		"max_tokens":       700,
+		"max_tokens":       450,
 		"reasoning_effort": "low",
 		"response_format":  map[string]string{"type": "json_object"},
 		"messages": []map[string]string{
@@ -153,10 +151,11 @@ func (b *Brain) Think(ctx context.Context, s Situation, rules Decision) (Decisio
 	return ParseBrain(out.Choices[0].Message.Content, s, rules)
 }
 
-// ParseBrain validates a model answer against the shop's situation: every
-// item the shop trades gets a policy inside the contract's bounds, city
-// trades and crafting are clamped by the same sense the rule book uses, and
-// the note is cleaned to house style.
+// ParseBrain validates a model answer. The model chooses the day's key
+// choice: target stock and margin for each item, and the note. City trades
+// and crafting stay with the rule book, which already sized them to the
+// shop's cash and stock. Every item needs a policy; values are clamped to the
+// shopkeeper's character bounds, which the contract also enforces.
 func ParseBrain(content string, s Situation, rules Decision) (Decision, error) {
 	content = strings.TrimSpace(content)
 	if i := strings.Index(content, "{"); i > 0 {
@@ -169,11 +168,12 @@ func ParseBrain(content string, s Situation, rules Decision) (Decision, error) {
 	if err := json.Unmarshal([]byte(content), &o); err != nil {
 		return Decision{}, fmt.Errorf("model answer is not JSON: %w", err)
 	}
-	d := Decision{CitySell: map[string]int64{}, CityBuy: map[string]int64{}}
 	byItem := map[string]market.Policy{}
 	for _, p := range o.Policies {
 		byItem[p.TokenID] = p
 	}
+	d := rules
+	d.Policies = nil
 	for _, it := range s.Spec.Items {
 		p, ok := byItem[it]
 		if !ok {
@@ -183,55 +183,7 @@ func ParseBrain(content string, s Situation, rules Decision) (Decision, error) {
 		p.MarginBps = clampInt(p.MarginBps, 200, 4000)
 		d.Policies = append(d.Policies, p)
 	}
-	for k, v := range o.CitySell {
-		if market.PlaceFor(k) != "" || k == "pickle" {
-			d.CitySell[k] = v
-		}
-	}
-	for k, v := range o.CityBuy {
-		if market.PlaceFor(k) != "" || k == "pickle" {
-			d.CityBuy[k] = v
-		}
-	}
-	// Buying and selling the same item in one go only pays the city twice.
-	for k := range d.CitySell {
-		if d.CityBuy[k] > 0 {
-			if d.CityBuy[k] >= d.CitySell[k] {
-				d.CityBuy[k] -= d.CitySell[k]
-				delete(d.CitySell, k)
-			} else {
-				d.CitySell[k] -= d.CityBuy[k]
-				delete(d.CityBuy, k)
-			}
-		}
-	}
-	// The city cart pays only 80% of the city price, so a shop sends it only
-	// stock above its own target, or what the rule book would send.
-	targets := map[string]int64{}
-	for _, p := range d.Policies {
-		targets[p.TokenID] = int64(p.TargetStock)
-	}
-	for k, v := range d.CitySell {
-		limit := rules.CitySell[k]
-		if t, ok := targets[k]; ok {
-			limit = max(limit, s.Shop.StockOf(k)-t)
-		}
-		if k == "pickle" {
-			limit = max(limit, int64(o.Craft)) // pickle made today may go straight to the city
-		}
-		d.CitySell[k] = min(v, max(limit, 0))
-	}
-	// The model may spend on city stock no more than the rule book would, or a
-	// third of the cash box, whichever is more.
-	allowed := max(spendOf(rules.CityBuy, s.World), int64(s.Shop.Kauri)/3)
-	for _, k := range sortedKeys(d.CityBuy) {
-		unit := max(1, (s.World.CityPrice(k)*125+99)/100)
-		d.CityBuy[k] = max(0, min(d.CityBuy[k], allowed/unit))
-		allowed -= d.CityBuy[k] * unit
-	}
-	mango, chilli := s.Shop.StockOf("mango")+d.CityBuy["mango"], s.Shop.StockOf("chilli")+d.CityBuy["chilli"]
-	d.Craft = max(0, min(o.Craft, mango/2, chilli, maxCityTrade))
-	clampCity(s, &d)
+	ApplyBounds(s.Spec, &d)
 	note := Clean(o.Note)
 	if note == "" {
 		return Decision{}, errors.New("model gave no note")
@@ -257,11 +209,13 @@ func systemPrompt(spec Spec) string {
 You run your own shop and your own cash box. Each review you choose your levers:
 - target_stock per item (1 to 200): how much you want to hold. Below target you pay players more; above it you pay less.
 - margin_bps per item (200 to 4000): your spread. You ask fair price plus margin and bid fair price minus margin.
-- city_sell / city_buy: the city cart buys at 80%% of the city price and sells at 125%%, and never comes on flood days.
-- craft: jars of pickle to make.
+Your character limits: margin %d to %d bps, target stock at most %d, and you never spend below a reserve of %d kauri. The contract refuses anything outside them.
+The city cart buys at 80%% of the city price and sells at 125%%, and never comes on flood days.
 The contract sets every price from your levers, stock and recent demand. If your cash falls below 200 kauri your shop closes until someone invests.
-Reply with JSON only: {"policies":[{"token_id":"...","target_stock":N,"margin_bps":N}],"city_sell":{"item":N},"city_buy":{"item":N},"craft":N,"note":"..."}
-The note is what you would tell a customer at your stall: one or two short first-person sentences in warm plain English about what you are doing and why (the weather, the season, your stock, your cash, your investors). At most 180 characters. Do not use the words target, margin or bps, and no dashes, arrows or emoji.`, spec.Name, traits)
+Your helper runs the city cart and pickle making by your rule book; you set the day's key choice.
+Reply with JSON only: {"policies":[{"token_id":"...","target_stock":N,"margin_bps":N}],"note":"..."}
+The note is what you would tell a customer at your stall: one or two short first-person sentences in warm plain English about what you are doing and why (the weather, the season, your stock, your cash, your investors). At most 180 characters. Do not use the words target, margin or bps, and no dashes, arrows or emoji.`, spec.Name, traits,
+		spec.Bounds.MarginMin, spec.Bounds.MarginMax, spec.Bounds.TargetMax, int64(spec.Bounds.CashFloor))
 }
 
 func situationPrompt(s Situation, rules Decision) string {
@@ -297,6 +251,7 @@ func situationPrompt(s Situation, rules Decision) string {
 		fmt.Fprintf(&b, "\nOther stock: %s.", strings.Join(other, ", "))
 	}
 	fmt.Fprintf(&b, "\nYour rule book suggests: %s. Rule book reason: %s", Summary(rules), strings.Join(rules.Reasons, " "))
+	b.WriteString("\nThe city trades and pickle above will happen as listed.")
 	b.WriteString("\nDecide now.")
 	return b.String()
 }
@@ -334,4 +289,68 @@ func spendOf(buys map[string]int64, w market.World) int64 {
 		total += n * max(1, (w.CityPrice(k)*125+99)/100)
 	}
 	return total
+}
+
+// Signature is a coarse description of a shopkeeper's situation. Two days with
+// the same signature get the same model choice from the cache, so the free
+// allowance goes further and fast-forward stays mostly model-driven.
+func Signature(s Situation) string {
+	var b strings.Builder
+	w := s.World
+	fmt.Fprintf(&b, "%s|%s|flood=%v|soon=%v|open=%v|inv=%v|cash=%d",
+		s.Spec.Key, w.Season, w.Flood, s.floodSoon(2), s.Shop.Open, s.Shop.SharesIssued > 0,
+		s.Shop.Spendable()/500)
+	for _, sh := range s.Shop.Shelves {
+		level := "at"
+		switch {
+		case int64(sh.Stock) == 0:
+			level = "empty"
+		case int(sh.Stock) < sh.TargetStock/2:
+			level = "low"
+		case int(sh.Stock) > sh.TargetStock*2:
+			level = "high"
+		}
+		fmt.Fprintf(&b, "|%s=%s", sh.TokenID, level)
+	}
+	for _, f := range w.Forecast {
+		if f.Season != w.Season {
+			fmt.Fprintf(&b, "|next=%s", f.Season)
+			break
+		}
+	}
+	return b.String()
+}
+
+type cached struct {
+	policies []market.Policy
+	note     string
+}
+
+// Remember stores a model choice for a situation signature.
+func (b *Brain) Remember(sig string, d Decision) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.cache == nil {
+		b.cache = map[string]cached{}
+	}
+	if len(b.cache) > 2000 {
+		b.cache = map[string]cached{}
+	}
+	b.cache[sig] = cached{policies: append([]market.Policy(nil), d.Policies...), note: d.Note}
+}
+
+// Recall returns the cached choice for a signature, applied over the rule
+// book's trades for today.
+func (b *Brain) Recall(sig string, s Situation, rules Decision) (Decision, bool) {
+	b.mu.Lock()
+	c, ok := b.cache[sig]
+	b.mu.Unlock()
+	if !ok {
+		return Decision{}, false
+	}
+	d := rules
+	d.Policies = append([]market.Policy(nil), c.policies...)
+	ApplyBounds(s.Spec, &d)
+	d.Note, d.Reasons = c.note, []string{c.note}
+	return d, true
 }

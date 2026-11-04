@@ -359,10 +359,14 @@ func (s *Server) buildStalls(snap *snapshot, pv *market.Player) []stallVM {
 					continue
 				}
 				for _, t := range a.Thoughts(3) {
-					tv := thoughtVM{When: ago(t.At), Note: t.Note, Suggested: t.Suggested, Chosen: t.Chosen, Why: t.Why, Tx: t.TxHash, Model: t.Source == "model"}
-					tv.Source = "rule book"
-					if tv.Model {
+					tv := thoughtVM{When: ago(t.At), Note: t.Note, Suggested: t.Suggested, Chosen: t.Chosen, Why: t.Why, Tx: t.TxHash, Model: t.Source != "rules"}
+					switch t.Source {
+					case "model":
 						tv.Source = "thought it through"
+					case "remembered":
+						tv.Source = "remembered a day like this"
+					default:
+						tv.Source = "rule book"
 					}
 					st.Thoughts = append(st.Thoughts, tv)
 				}

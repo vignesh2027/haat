@@ -97,6 +97,7 @@ type Merchant struct {
 	Note         string  `json:"note"`
 	NoteDay      int     `json:"note_day"`
 	SettledToday bool    `json:"settled_today"`
+	Bounds       Bounds  `json:"bounds"`
 	Shelves      []Shelf `json:"shelves"`
 	Stock        []Pair  `json:"stock"`
 }
@@ -136,6 +137,7 @@ type Quote struct {
 	StockFactorBps  U128   `json:"stock_factor_bps"`
 	DemandFactorBps U128   `json:"demand_factor_bps"`
 	MerchantKauri   U128   `json:"merchant_kauri"`
+	Spendable       U128   `json:"spendable"`
 	Open            bool   `json:"open"`
 }
 
@@ -296,13 +298,29 @@ func RegisterPlayer(account string) near.FunctionCall {
 	return near.CallArgs("register_player", map[string]any{"account_id": account}, gas)
 }
 
-func AddMerchant(account, name string, items []string, kauri int64, stock []int64) near.FunctionCall {
+// Bounds are the limits of a shopkeeper's character, enforced by the contract.
+type Bounds struct {
+	MarginMin int  `json:"margin_min"`
+	MarginMax int  `json:"margin_max"`
+	TargetMax int  `json:"target_max"`
+	CashFloor U128 `json:"cash_floor"`
+}
+
+// Spendable is the cash a shop will spend: its purse above its reserve.
+func (m Merchant) Spendable() int64 { return max(0, int64(m.Kauri)-int64(m.Bounds.CashFloor)) }
+
+func SetBounds(account string, b Bounds) near.FunctionCall {
+	return near.CallArgs("set_bounds", map[string]any{"account_id": account, "bounds": b}, gas)
+}
+
+func AddMerchant(account, name string, items []string, kauri int64, stock []int64, b Bounds) near.FunctionCall {
 	s := make([]U128, len(stock))
 	for i, v := range stock {
 		s[i] = U128(v)
 	}
 	return near.CallArgs("add_merchant", map[string]any{
 		"account_id": account, "name": name, "items": items, "opening_kauri": U128(kauri), "opening_stock": s,
+		"bounds": b,
 	}, gas)
 }
 

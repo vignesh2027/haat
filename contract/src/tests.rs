@@ -46,6 +46,7 @@ fn setup() -> Market {
         vec!["chilli".into(), "pickle".into()],
         U128(1_000),
         vec![U128(10), U128(2)],
+        None,
     );
     m.register_player(acc("kavya.test"));
     m
@@ -259,7 +260,7 @@ fn players_cannot_set_shop_policy() {
 }
 
 #[test]
-#[should_panic(expected = "margin must be")]
+#[should_panic(expected = "margin must stay between 200 and 4000")]
 fn policy_bounds_are_enforced() {
     let mut m = setup();
     as_caller("meena.test");
@@ -548,6 +549,7 @@ fn fund(m: &mut Market, who: &str, amount: u128) {
             vec!["rice".into()],
             U128(1_000_000),
             vec![U128(0)],
+            None,
         );
     }
     as_caller_with_yocto("bank.test");
@@ -764,4 +766,71 @@ fn leaderboard_counts_rescues_and_net_worth() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].rescues, 1);
     assert!(rows[0].net_worth.0 >= rows[0].kauri.0);
+}
+
+/// A prudent shop with a reserve, like Bashir.
+fn add_prudent(m: &mut Market) {
+    as_caller("owner.test");
+    m.add_merchant(
+        acc("bashir.test"),
+        "Bashir Bhai".into(),
+        vec!["fish".into()],
+        U128(1_000),
+        vec![U128(5)],
+        Some(Bounds { margin_min: 1_000, margin_max: 2_500, target_max: 25, cash_floor: U128(700) }),
+    );
+}
+
+#[test]
+#[should_panic(expected = "margin must stay between 1000 and 2500")]
+fn shops_cannot_leave_their_character_margin() {
+    let mut m = setup();
+    add_prudent(&mut m);
+    as_caller("bashir.test");
+    m.set_policies(vec![Policy { token_id: "fish".into(), target_stock: 10, margin_bps: 600 }], "thin".into());
+}
+
+#[test]
+#[should_panic(expected = "target stock must stay at or below 25")]
+fn shops_cannot_leave_their_character_target() {
+    let mut m = setup();
+    add_prudent(&mut m);
+    as_caller("bashir.test");
+    m.set_policies(vec![Policy { token_id: "fish".into(), target_stock: 90, margin_bps: 1_200 }], "big".into());
+}
+
+#[test]
+fn a_reserve_keeps_a_prudent_shop_open() {
+    let mut m = setup();
+    add_prudent(&mut m);
+    // Players cannot drain it below its reserve.
+    as_caller("kavya.test");
+    for _ in 0..ENERGY_PER_DAY {
+        m.gather("river".into());
+    }
+    let fish = bal(&m, "fish", "kavya.test");
+    let q = m.quote(acc("bashir.test"), "fish".into(), "sell".into(), U128(fish));
+    assert_eq!(q.spendable.0, 300);
+    let mut sold = 0;
+    for n in (1..=fish).rev() {
+        let q = m.quote(acc("bashir.test"), "fish".into(), "sell".into(), U128(n));
+        if q.total.unwrap().0 <= q.spendable.0 {
+            as_caller("kavya.test");
+            m.sell(acc("bashir.test"), "fish".into(), U128(n), U128(0));
+            sold = n;
+            break;
+        }
+    }
+    assert!(sold > 0);
+    assert!(bal(&m, KAURI, "bashir.test") >= 700);
+    assert!(m.get_merchant(acc("bashir.test")).unwrap().open);
+}
+
+#[test]
+#[should_panic(expected = "keeps 700 kauri in reserve")]
+fn a_reserve_limits_city_buying() {
+    let mut m = setup();
+    add_prudent(&mut m);
+    as_caller("bashir.test");
+    m.city_buy("fish".into(), U128(10)); // about 880 kauri
 }

@@ -184,24 +184,23 @@ func TestMeenaTurnsCarefulWithInvestors(t *testing.T) {
 	}
 }
 
-func TestParseBrainClampsToContractBounds(t *testing.T) {
+func TestParseBrainClampsToCharacterBounds(t *testing.T) {
 	spec, _ := ByKey("lakshmi")
 	s := Situation{Spec: spec, Shop: shop("lakshmi", 2500, map[string]int64{"mango": 9, "pickle": 3}), World: world("garmi", false)}
+	rules := Decide(s)
 	d, err := ParseBrain(`Here you go: {"policies":[{"token_id":"mango","target_stock":900,"margin_bps":50},{"token_id":"pickle","target_stock":5,"margin_bps":1200}],
-	  "city_sell":{"pickle":2,"gold":5},"city_buy":{"chilli":4},"craft":40,"note":"Mangoes are cheap — I will make pickle -> sell at Diwali."}`, s, Decide(s))
+	  "city_sell":{"pickle":20},"note":"Mangoes are cheap — I will make pickle -> sell at Diwali."}`, s, rules)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Policies[0].TargetStock != 200 || d.Policies[0].MarginBps != 200 {
-		t.Fatalf("levers must be clamped to the contract bounds: %+v", d.Policies[0])
+	b := spec.Bounds
+	if d.Policies[0].TargetStock != b.TargetMax || d.Policies[0].MarginBps != b.MarginMin {
+		t.Fatalf("levers must be clamped to the character bounds %+v: %+v", b, d.Policies[0])
 	}
-	if _, ok := d.CitySell["gold"]; ok {
-		t.Fatal("unknown items are dropped")
+	if len(d.CitySell) != len(rules.CitySell) || d.Craft != rules.Craft {
+		t.Fatal("city trades and crafting stay with the rule book")
 	}
-	if d.Craft != 4 {
-		t.Fatalf("craft is limited by mangoes and chillies on hand: %d", d.Craft)
-	}
-	if strings.ContainsAny(d.Note, "—→") || strings.Contains(d.Note, "->") {
+	if strings.ContainsAny(d.Note, "\u2014\u2192") || strings.Contains(d.Note, "->") {
 		t.Fatalf("note must follow house style: %q", d.Note)
 	}
 }
@@ -215,11 +214,7 @@ func TestParseBrainRejectsIncompleteAnswers(t *testing.T) {
 	if _, err := ParseBrain(`not json`, s, Decision{}); err == nil {
 		t.Fatal("non-JSON must fall back")
 	}
-	flood := Situation{Spec: spec, Shop: shop("ramu", 3000, map[string]int64{"rice": 90}), World: world("barsaat", true)}
-	d, err := ParseBrain(`{"policies":[{"token_id":"rice","target_stock":10,"margin_bps":2000},{"token_id":"mango","target_stock":10,"margin_bps":2000}],"city_sell":{"rice":50},"note":"Sell rice."}`, flood, Decision{})
-	if err != nil || len(d.CitySell) != 0 {
-		t.Fatalf("no city trades on flood days, whatever the model says: %+v %v", d.CitySell, err)
-	}
+
 }
 
 func TestBrainBudget(t *testing.T) {
@@ -233,35 +228,44 @@ func TestBrainBudget(t *testing.T) {
 	}
 }
 
-func TestModelCannotOverspendOrSellWhatItCrafts(t *testing.T) {
-	spec, _ := ByKey("ramu")
-	s := Situation{Spec: spec, Shop: shop("ramu", 3000, map[string]int64{"rice": 10, "mango": 10}), World: world("garmi", false)}
-	d, err := ParseBrain(`{"policies":[{"token_id":"rice","target_stock":10,"margin_bps":2000},{"token_id":"mango","target_stock":10,"margin_bps":2000}],"city_buy":{"rice":50,"fish":50},"note":"Stocking up."}`, s, Decide(s))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if spend := spendOf(d.CityBuy, s.World); spend > 1000 {
-		t.Fatalf("the model spent %d of 3000 on city stock", spend)
-	}
-	l, _ := ByKey("lakshmi")
-	ls := Situation{Spec: l, Shop: shop("lakshmi", 2500, map[string]int64{"mango": 15, "chilli": 7}), World: world("garmi", false)}
-	d, err = ParseBrain(`{"policies":[{"token_id":"mango","target_stock":10,"margin_bps":1500},{"token_id":"pickle","target_stock":4,"margin_bps":1500}],"craft":7,"city_sell":{"mango":15},"note":"Pickle day."}`, ls, Decide(ls))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if d.CitySell["mango"] > 15-2*d.Craft {
-		t.Fatalf("cannot sell mangoes already used for pickle: craft %d, sell %d", d.Craft, d.CitySell["mango"])
+func TestEveryRuleBookStaysInsideItsCharacter(t *testing.T) {
+	for _, spec := range Roster {
+		for _, season := range []string{"garmi", "barsaat", "tyohar"} {
+			for _, cash := range []int64{50, 900, 3000, 9000} {
+				for _, flood := range []bool{false, true} {
+					m := shop(spec.Key, cash, map[string]int64{"mango": 30, "rice": 30, "fish": 30, "chilli": 30, "pickle": 30})
+					m.SharesIssued = market.U128(cash % 2 * 100)
+					d := Decide(Situation{Spec: spec, Shop: m, World: world(season, flood, true, false, false)})
+					for _, p := range d.Policies {
+						if p.MarginBps < spec.Bounds.MarginMin || p.MarginBps > spec.Bounds.MarginMax || p.TargetStock > spec.Bounds.TargetMax {
+							t.Fatalf("%s leaves its character: %+v bounds %+v", spec.Key, p, spec.Bounds)
+						}
+					}
+					spend := spendOf(d.CityBuy, world(season, flood))
+					if spend > 0 && cash-spend < int64(spec.Bounds.CashFloor) {
+						t.Fatalf("%s spends its reserve: cash %d spend %d floor %d", spec.Key, cash, spend, spec.Bounds.CashFloor)
+					}
+					if spec.CityBuyBeforeFloodOnly && len(d.CityBuy) > 0 && !flood {
+						// world() above has a flood in tomorrow's forecast, so buying is allowed;
+						// with a clear forecast it must not buy.
+						clear := Decide(Situation{Spec: spec, Shop: m, World: world(season, false, false, false, false)})
+						if len(clear.CityBuy) > 0 {
+							t.Fatalf("%s bought from the city with no flood coming", spec.Key)
+						}
+					}
+				}
+			}
+		}
 	}
 }
 
-func TestModelKeepsStockOnTheShelf(t *testing.T) {
-	spec, _ := ByKey("meena")
-	s := Situation{Spec: spec, Shop: shop("meena", 3000, map[string]int64{"chilli": 30, "pickle": 3}), World: world("garmi", false)}
-	d, err := ParseBrain(`{"policies":[{"token_id":"chilli","target_stock":25,"margin_bps":600},{"token_id":"pickle","target_stock":6,"margin_bps":600}],"city_sell":{"chilli":30,"pickle":3},"city_buy":{"chilli":5},"note":"Clearing out."}`, s, Decision{})
-	if err != nil {
-		t.Fatal(err)
+func TestBashirStocksRiceBeforeTheFlood(t *testing.T) {
+	d := decide("bashir", 2600, map[string]int64{"fish": 30, "rice": 5}, world("barsaat", false, true, false, false))
+	if d.CityBuy["rice"] == 0 || d.CitySell["fish"] == 0 {
+		t.Fatalf("before a flood Bashir sells fish and stocks rice: buy %v sell %v", d.CityBuy, d.CitySell)
 	}
-	if d.CitySell["chilli"] > 5 || d.CitySell["pickle"] > 0 || d.CityBuy["chilli"] > 0 {
-		t.Fatalf("only stock above target goes to the city, and never buy and sell together: sell %v buy %v", d.CitySell, d.CityBuy)
+	calm := decide("bashir", 2600, map[string]int64{"fish": 10, "rice": 5}, world("barsaat", false, false, false, false))
+	if len(calm.CityBuy) > 0 {
+		t.Fatal("no flood coming, no city buying")
 	}
 }

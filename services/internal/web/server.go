@@ -437,6 +437,8 @@ func friendlyError(err error) string {
 		return "Your purse is too light for that."
 	case strings.Contains(msg, "not enough"):
 		return "You do not have that many in your basket."
+	case strings.Contains(msg, "in reserve and can spend only"):
+		return upperFirst(strings.TrimPrefix(msg, "Smart contract panicked: ")) + ". Try fewer, or another stall."
 	case strings.Contains(msg, "price moved"):
 		return "Someone traded first and the price moved. Have another look and try again."
 	case strings.Contains(msg, "rpc"), strings.Contains(msg, "context deadline"):

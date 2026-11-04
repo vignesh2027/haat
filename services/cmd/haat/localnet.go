@@ -148,6 +148,24 @@ func (a *app) localnet(ctx context.Context, sub string) error {
 		fmt.Println("local network reset")
 		return nil
 	}
+	stop, err := a.startLocalnet(ctx)
+	if err != nil {
+		return err
+	}
+	defer stop()
+	if err := a.bootstrap(ctx); err != nil {
+		return err
+	}
+	fmt.Println("\nThe haat is open at http://localhost:" + a.env.Or("PORT", "8080") + " (press Ctrl+C to stop)")
+	return a.serve(ctx)
+}
+
+// startLocalnet starts a local near-sandbox node and creates the root
+// account from the node's genesis account. It returns a function that stops
+// the node.
+func (a *app) startLocalnet(ctx context.Context) (func(), error) {
+	dir := a.env.Or("HAAT_LOCALNET_DIR", ".localnet")
+	home := filepath.Join(dir, "home")
 	port := a.env.Or("HAAT_LOCALNET_RPC_PORT", "3030")
 	defaults := map[string]string{
 		"NEAR_NETWORK":          "localnet",
@@ -161,12 +179,12 @@ func (a *app) localnet(ctx context.Context, sub string) error {
 	for k, v := range defaults {
 		if _, set := os.LookupEnv(k); !set && a.env.Get(k) == "" {
 			if err := a.env.Set(k, v); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 	// Reuse an optional model key from the main settings file.
-	if a.env.Get("GROQ_API_KEY") == "" {
+	if a.env.Get("GROQ_API_KEY") == "" && a.env.Get("HAAT_AGENT_BRAIN") != "rules" {
 		if main, err := config.Load(".env"); err == nil && main.Get("GROQ_API_KEY") != "" {
 			_ = a.env.Set("GROQ_API_KEY", main.Get("GROQ_API_KEY"))
 		}
@@ -175,22 +193,22 @@ func (a *app) localnet(ctx context.Context, sub string) error {
 
 	bin, err := ensureSandbox(ctx, dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := initHome(bin, home, port, a.env.Or("HAAT_LOCALNET_P2P_PORT", "24568")); err != nil {
-		return err
+		return nil, err
 	}
 	logf, err := os.Create(filepath.Join(dir, "node.log"))
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer logf.Close()
 	node := exec.Command(bin, "--home", home, "run")
 	node.Stdout, node.Stderr = logf, logf
 	if err := node.Start(); err != nil {
-		return err
+		logf.Close()
+		return nil, err
 	}
-	defer func() {
+	stop := func() {
 		_ = node.Process.Signal(os.Interrupt)
 		done := make(chan struct{})
 		go func() { _ = node.Wait(); close(done) }()
@@ -199,47 +217,49 @@ func (a *app) localnet(ctx context.Context, sub string) error {
 		case <-time.After(5 * time.Second):
 			_ = node.Process.Kill()
 		}
-	}()
+		logf.Close()
+	}
 	fmt.Println("local NEAR node running at", a.env.Get("NEAR_RPC_URL"))
 	if err := waitForRPC(ctx, a.rpc); err != nil {
-		return err
+		stop()
+		return nil, err
 	}
-
 	if a.env.Get("HAAT_ROOT") == "" {
-		raw, err := os.ReadFile(filepath.Join(home, "validator_key.json"))
-		if err != nil {
-			return err
-		}
-		var vk struct {
-			AccountID string `json:"account_id"`
-			SecretKey string `json:"secret_key"`
-		}
-		if err := json.Unmarshal(raw, &vk); err != nil {
-			return err
-		}
-		gk, err := near.ParseSecretKey(vk.SecretKey)
-		if err != nil {
-			return err
-		}
-		genesis := near.NewAccount(a.rpc, vk.AccountID, gk)
-		k, err := near.GenerateKey()
-		if err != nil {
-			return err
-		}
-		id := "haat." + vk.AccountID
-		if _, err := genesis.Send(ctx, id, near.CreateAccount{}, near.Transfer{Deposit: near.MustNEAR("1000")}, near.AddKey{PublicKey: k.Public}); err != nil {
-			return fmt.Errorf("create %s: %w", id, err)
-		}
-		if err := a.env.Set("HAAT_ROOT", id); err != nil {
-			return err
-		}
-		if err := a.env.Set("HAAT_ROOT_KEYS", k.SecretKeyString()); err != nil {
-			return err
+		if err := a.createLocalRoot(ctx, home); err != nil {
+			stop()
+			return nil, err
 		}
 	}
-	if err := a.bootstrap(ctx); err != nil {
+	return stop, nil
+}
+
+func (a *app) createLocalRoot(ctx context.Context, home string) error {
+	raw, err := os.ReadFile(filepath.Join(home, "validator_key.json"))
+	if err != nil {
 		return err
 	}
-	fmt.Println("\nThe haat is open at http://localhost:" + a.env.Or("PORT", "8080") + " (press Ctrl+C to stop)")
-	return a.serve(ctx)
+	var vk struct {
+		AccountID string `json:"account_id"`
+		SecretKey string `json:"secret_key"`
+	}
+	if err := json.Unmarshal(raw, &vk); err != nil {
+		return err
+	}
+	gk, err := near.ParseSecretKey(vk.SecretKey)
+	if err != nil {
+		return err
+	}
+	genesis := near.NewAccount(a.rpc, vk.AccountID, gk)
+	k, err := near.GenerateKey()
+	if err != nil {
+		return err
+	}
+	id := "haat." + vk.AccountID
+	if _, err := genesis.Send(ctx, id, near.CreateAccount{}, near.Transfer{Deposit: near.MustNEAR("1000")}, near.AddKey{PublicKey: k.Public}); err != nil {
+		return fmt.Errorf("create %s: %w", id, err)
+	}
+	if err := a.env.Set("HAAT_ROOT", id); err != nil {
+		return err
+	}
+	return a.env.Set("HAAT_ROOT_KEYS", k.SecretKeyString())
 }

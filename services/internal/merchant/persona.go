@@ -95,8 +95,23 @@ func Decide(s Situation) Decision {
 		}
 	}
 	clampCity(s, &d)
+	ApplyBounds(s.Spec, &d)
 	d.Note = composeNote(s, d)
 	return d
+}
+
+// ApplyBounds keeps a decision inside the shopkeeper's character: margins and
+// targets inside the bounds the contract also enforces. The agent applies it
+// to every decision, from the rule book or the model, before signing.
+func ApplyBounds(spec Spec, d *Decision) {
+	b := spec.Bounds
+	if b.MarginMax == 0 {
+		return
+	}
+	for i := range d.Policies {
+		d.Policies[i].MarginBps = clampInt(d.Policies[i].MarginBps, b.MarginMin, b.MarginMax)
+		d.Policies[i].TargetStock = clampInt(d.Policies[i].TargetStock, 1, b.TargetMax)
+	}
 }
 
 func decideRamu(s Situation, d *Decision) {
@@ -188,7 +203,16 @@ func decideBashir(s Situation, d *Decision) {
 			target = 12 // the river is full; he expects a glut
 		}
 		if rainSoon {
-			target, margin = target/2, 2000
+			margin = 2000
+			if it == "fish" {
+				target /= 2
+			}
+			// Rice is scarce once the road is cut: he stocks up while it is open.
+			if it == "rice" && s.roadOpen() {
+				if want := int64(target) - s.Shop.StockOf("rice"); want > 0 {
+					d.CityBuy["rice"] = want
+				}
+			}
 		}
 		d.Policies = append(d.Policies, market.Policy{TokenID: it, TargetStock: target, MarginBps: margin})
 		stock := s.Shop.StockOf(it)
@@ -197,7 +221,7 @@ func decideBashir(s Situation, d *Decision) {
 		}
 	}
 	if rainSoon && s.roadOpen() {
-		d.Reasons = append(d.Reasons, "The panchang says floods are coming. I am selling to the city while the road is open.")
+		d.Reasons = append(d.Reasons, "The panchang says floods are coming. I sell my extra fish to the city and stock rice while the road is open.")
 	} else if s.World.Flood {
 		d.Reasons = append(d.Reasons, "The road is flooded. I am holding cash and buying carefully.")
 	} else {
@@ -298,9 +322,13 @@ func clampCity(s Situation, d *Decision) {
 			d.CitySell[k] = v
 		}
 	}
-	spend := cash - closeBelow - 50 // a sensible shop never buys itself into closing
+	// A shop never spends its reserve; a sensible one keeps clear of closing too.
+	spend := cash - max(int64(s.Spec.Bounds.CashFloor), closeBelow) - 50
 	if s.Spec.Key == "meena" {
 		spend = cash - 20 // Meena is bold: she will spend her last kauri on stock
+	}
+	if s.Spec.CityBuyBeforeFloodOnly && !s.floodSoon(2) {
+		spend = 0
 	}
 	for _, k := range SortedKeys(d.CityBuy) {
 		v := min(d.CityBuy[k], maxCityTrade)
