@@ -85,7 +85,7 @@ deploy/                   Modal app that runs the binary in one always-on contai
 |---|---|---|
 | `PORT` | 8080 | web server port |
 | `NEAR_NETWORK` | testnet | `testnet` or `localnet` (set by `make localnet`) |
-| `NEAR_RPC_URL` | https://rpc.testnet.fastnear.com | JSON-RPC endpoint |
+| `NEAR_RPC_URL` | fastnear, near.org and drpc testnet endpoints | JSON-RPC endpoint, or a comma-separated list to fail over between |
 | `NEAR_HELPER_URL` | https://helper.nearprotocol.com | testnet account helper used by bootstrap |
 | `NEAR_EXPLORER_URL` | https://testnet.nearblocks.io | explorer for links (none on localnet) |
 | `GROQ_API_KEY` | none | enables the shopkeepers' model |

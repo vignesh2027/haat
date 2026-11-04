@@ -79,7 +79,7 @@ func New(cookieSecret string) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{
-		sealer: sealer, cacheTTL: 2 * time.Second, MaxNewPlayersPerHour: 60, MinRootNEAR: near.MustNEAR("0.5"),
+		sealer: sealer, cacheTTL: 3 * time.Second, MaxNewPlayersPerHour: 60, MinRootNEAR: near.MustNEAR("0.5"),
 		limits: newLimits(), queue: newMoveQueue(), budget: &gasBudget{Limit: 3000},
 	}
 	if err := s.parse(); err != nil {

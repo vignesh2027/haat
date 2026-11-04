@@ -21,6 +21,10 @@ import (
 	"haat/internal/world"
 )
 
+// defaultTestnetRPC lists public testnet endpoints; the client moves to the
+// next one when an endpoint rate limits it.
+const defaultTestnetRPC = "https://rpc.testnet.fastnear.com,https://rpc.testnet.near.org,https://near-testnet.drpc.org"
+
 type app struct {
 	env *config.Env
 	rpc *near.Client
@@ -31,7 +35,7 @@ func loadApp(envPath string) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &app{env: env, rpc: near.NewClient(env.Or("NEAR_RPC_URL", "https://rpc.testnet.fastnear.com"))}, nil
+	return &app{env: env, rpc: near.NewClient(env.Or("NEAR_RPC_URL", defaultTestnetRPC))}, nil
 }
 
 func (a *app) explorer(hash string) string {

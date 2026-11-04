@@ -15,16 +15,28 @@ import (
 	"time"
 )
 
-// Client is a minimal NEAR JSON-RPC client.
+// Client is a minimal NEAR JSON-RPC client. It can hold several endpoints:
+// when one is rate limited or failing, it moves to the next.
 type Client struct {
-	URL  string
+	URL  string // the first endpoint, for display
+	urls []string
+	cur  atomic.Int64
 	HTTP *http.Client
 	id   atomic.Int64
 }
 
-// NewClient returns a client for the given RPC URL.
+// NewClient returns a client for one RPC URL or a comma-separated list.
 func NewClient(url string) *Client {
-	return &Client{URL: url, HTTP: &http.Client{Timeout: 60 * time.Second}}
+	var urls []string
+	for _, u := range strings.Split(url, ",") {
+		if u = strings.TrimSpace(u); u != "" {
+			urls = append(urls, u)
+		}
+	}
+	if len(urls) == 0 {
+		urls = []string{url}
+	}
+	return &Client{URL: urls[0], urls: urls, HTTP: &http.Client{Timeout: 60 * time.Second}}
 }
 
 // RPCError is an error returned by the node.
@@ -43,13 +55,26 @@ func (e *RPCError) Error() string {
 	return fmt.Sprintf("rpc %s/%s: %s %s", e.Name, e.Cause.Name, e.Message, string(e.Data))
 }
 
+func (c *Client) endpoint() string {
+	return c.urls[int(c.cur.Load())%len(c.urls)]
+}
+
+// failover moves to the next endpoint after a rate limit or an outage.
+func (c *Client) failover(from string) {
+	if len(c.urls) > 1 && c.endpoint() == from {
+		c.cur.Add(1)
+	}
+}
+
 func (c *Client) call(ctx context.Context, method string, params any, out any) error {
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": c.id.Add(1), "method": method, "params": params,
 	})
 	var lastErr error
-	for attempt := 0; attempt < 4; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL, bytes.NewReader(body))
+	attempts := 4 + 2*len(c.urls)
+	for attempt := 0; attempt < attempts; attempt++ {
+		url := c.endpoint()
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return err
 		}
@@ -57,11 +82,16 @@ func (c *Client) call(ctx context.Context, method string, params any, out any) e
 		resp, err := c.HTTP.Do(req)
 		if err != nil {
 			lastErr = err
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			c.failover(url)
 		} else {
 			raw, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 				lastErr = fmt.Errorf("rpc http %d: %s", resp.StatusCode, truncate(string(raw), 200))
+				c.failover(url)
 			} else {
 				var env struct {
 					Result json.RawMessage `json:"result"`
@@ -71,6 +101,11 @@ func (c *Client) call(ctx context.Context, method string, params any, out any) e
 					return fmt.Errorf("rpc decode: %w: %s", err, truncate(string(raw), 200))
 				}
 				if env.Error != nil {
+					if env.Error.Code == -429 {
+						lastErr = env.Error
+						c.failover(url)
+						goto wait
+					}
 					return env.Error
 				}
 				if out == nil {
@@ -79,10 +114,12 @@ func (c *Client) call(ctx context.Context, method string, params any, out any) e
 				return json.Unmarshal(env.Result, out)
 			}
 		}
+	wait:
+		delay := time.Duration(200*(1<<min(attempt, 4))) * time.Millisecond
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(time.Duration(300*(attempt+1)) * time.Millisecond):
+		case <-time.After(delay):
 		}
 	}
 	return lastErr

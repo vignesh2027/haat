@@ -376,6 +376,11 @@ func (k *Keeper) runFastForward(days int) {
 		k.ff.Day = d
 		k.mu.Unlock()
 		err = k.endDayLocked(ctx)
+		if err != nil {
+			// One retry: public endpoints sometimes rate limit for a moment.
+			time.Sleep(3 * time.Second)
+			err = k.endDayLocked(ctx)
+		}
 	}
 	k.mu.Lock()
 	defer k.mu.Unlock()

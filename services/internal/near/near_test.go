@@ -2,10 +2,14 @@ package near
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -186,5 +190,24 @@ func TestFailureMessage(t *testing.T) {
 	raw := []byte(`{"ActionError":{"index":0,"kind":{"FunctionCallError":{"ExecutionError":"Smart contract panicked: no energy left today"}}}}`)
 	if got := FailureMessage(raw); got != "no energy left today" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestClientFailsOverOnRateLimit(t *testing.T) {
+	limited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer limited.Close()
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"header":{"hash":"11111111111111111111111111111111","height":7}}}`)
+	}))
+	defer good.Close()
+	c := NewClient(limited.URL + ", " + good.URL)
+	b, err := c.FinalBlock(context.Background())
+	if err != nil || b.Height != 7 {
+		t.Fatalf("expected failover to the second endpoint: %v %+v", err, b)
+	}
+	if c.endpoint() != good.URL {
+		t.Fatal("the client should stay on the working endpoint")
 	}
 }

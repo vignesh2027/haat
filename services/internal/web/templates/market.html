@@ -14,7 +14,7 @@
     {{if .FF.Running}}<p><b>Running: day {{.FF.Day}} of {{.FF.Of}}.</b></p>
     {{else if gt .FFLeft 0}}<form method="post" action="/fast-forward"><button class="btn btn-violet">⏩ Fast-forward 7 days</button></form>
     {{else}}<p class="muted small">Already used this hour on the shared demo. Locally, <code>make localnet</code> has no limit.</p>{{end}}
-    {{if and (not .FF.Running) .FF.Took}}<p class="muted small">Last run: {{.FF.Of}} days in {{ffsecs .FF}} seconds.</p>{{end}}
+    {{if and (not .FF.Running) .FF.Took}}{{if .FF.Err}}<p class="muted small">The last run stopped early because the NEAR endpoint was busy. The days it played are kept.</p>{{else}}<p class="muted small">Last run: {{.FF.Of}} days in {{ffsecs .FF}} seconds.</p>{{end}}{{end}}
   </section>
   </div>
 
