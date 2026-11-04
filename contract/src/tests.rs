@@ -834,3 +834,22 @@ fn a_reserve_limits_city_buying() {
     as_caller("bashir.test");
     m.city_buy("fish".into(), U128(10)); // about 880 kauri
 }
+
+#[test]
+fn reset_world_starts_clean_under_a_new_name() {
+    let mut m = setup();
+    as_caller("kavya.test");
+    m.gather("grove".into());
+    as_caller("market.test");
+    let fresh = Market::reset_world(acc("owner.test"), 9, "w2".into());
+    assert_eq!(fresh.get_merchants().len(), 0);
+    assert_eq!(fresh.mt_balance_of(acc("kavya.test"), KAURI.into()).0, 0);
+    assert_eq!(fresh.get_world().day, 0);
+}
+
+#[test]
+#[should_panic(expected = "world name must be")]
+fn reset_world_needs_a_plain_name() {
+    as_caller("market.test");
+    Market::reset_world(acc("owner.test"), 9, "a/b".into());
+}

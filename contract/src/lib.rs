@@ -7,7 +7,7 @@
 
 use near_sdk::json_types::U128;
 use near_sdk::store::{IterableMap, LookupMap, LookupSet, Vector};
-use near_sdk::{AccountId, BorshStorageKey, NearToken, PanicOnDefault, env, near, require};
+use near_sdk::{AccountId, NearToken, PanicOnDefault, env, near, require};
 
 mod events;
 mod mt;
@@ -50,27 +50,14 @@ pub const CHRONICLE_MIN_INVEST: u128 = 100;
 /// NEAR an outside account deposits once to receive tokens by standard transfer.
 pub const STORAGE_DEPOSIT: NearToken = NearToken::from_millinear(10);
 
-/// Collection prefixes. Prefixes 0 to 6 held the first testnet world, which
-/// was replaced with `reset_world`; they are never read again.
-#[derive(BorshStorageKey)]
-#[near]
-enum StorageKey {
-    _FirstWorld0,
-    _FirstWorld1,
-    _FirstWorld2,
-    _FirstWorld3,
-    _FirstWorld4,
-    _FirstWorld5,
-    _FirstWorld6,
-    Balances,
-    Supply,
-    Merchants,
-    Players,
-    Holdings,
-    History,
-    Chronicle,
-    PlayerIds,
-    Known,
+/// Storage prefix for one collection: the world's name followed by one
+/// letter. A fresh world on the same account (see `reset_world`) uses a new
+/// name, so the old world's entries are never read again.
+fn prefix(world: &str, kind: u8) -> Vec<u8> {
+    let mut p = world.as_bytes().to_vec();
+    p.push(b'/');
+    p.push(kind);
+    p
 }
 
 /// One shopkeeper lever setting for one item.
@@ -360,21 +347,41 @@ pub struct PlayerView {
 impl Market {
     #[init]
     pub fn new(owner_id: AccountId, world_seed: u64) -> Self {
+        Self::create(owner_id, world_seed, "w1")
+    }
+
+    /// Starts a fresh world on an already deployed market, ignoring the old
+    /// state, under a new world name. Only the market account itself can call it.
+    #[init(ignore_state)]
+    #[private]
+    pub fn reset_world(owner_id: AccountId, world_seed: u64, world_name: String) -> Self {
+        require!(
+            !world_name.is_empty()
+                && world_name.len() <= 16
+                && world_name.bytes().all(|c| c.is_ascii_alphanumeric()),
+            "world name must be 1 to 16 letters or digits"
+        );
+        Self::create(owner_id, world_seed, &world_name)
+    }
+}
+
+impl Market {
+    fn create(owner_id: AccountId, world_seed: u64, world: &str) -> Self {
         let mut m = Self {
             owner_id,
             world_seed,
             day: 0,
-            balances: LookupMap::new(StorageKey::Balances),
-            supply: IterableMap::new(StorageKey::Supply),
-            merchants: IterableMap::new(StorageKey::Merchants),
-            players: LookupMap::new(StorageKey::Players),
+            balances: LookupMap::new(prefix(world, b'b')),
+            supply: IterableMap::new(prefix(world, b's')),
+            merchants: IterableMap::new(prefix(world, b'm')),
+            players: LookupMap::new(prefix(world, b'p')),
             player_count: 0,
-            holdings: LookupMap::new(StorageKey::Holdings),
-            history: LookupMap::new(StorageKey::History),
-            chronicle: LookupMap::new(StorageKey::Chronicle),
+            holdings: LookupMap::new(prefix(world, b'h')),
+            history: LookupMap::new(prefix(world, b'd')),
+            chronicle: LookupMap::new(prefix(world, b'c')),
             chronicle_len: 0,
-            player_ids: Vector::new(StorageKey::PlayerIds),
-            known: LookupSet::new(StorageKey::Known),
+            player_ids: Vector::new(prefix(world, b'i')),
+            known: LookupSet::new(prefix(world, b'k')),
         };
         for t in std::iter::once(KAURI).chain(ITEMS) {
             m.supply.insert(t.to_string(), 0);
@@ -382,15 +389,10 @@ impl Market {
         m.log_chronicle("season_garmi", None, None, None);
         m
     }
+}
 
-    /// Starts a fresh world on an already deployed market, ignoring the old
-    /// state. Only the market account itself can call it.
-    #[init(ignore_state)]
-    #[private]
-    pub fn reset_world(owner_id: AccountId, world_seed: u64) -> Self {
-        Self::new(owner_id, world_seed)
-    }
-
+#[near]
+impl Market {
     // ---------- owner ----------
 
     /// Changes the limits of a shopkeeper's character.

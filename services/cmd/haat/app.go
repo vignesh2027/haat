@@ -470,11 +470,17 @@ func (a *app) resetMarket(ctx context.Context) error {
 	seed := a.worldSeed()
 	out, err := near.NewAccount(a.rpc, marketID, k).Send(ctx, marketID,
 		near.DeployContract{Code: code},
-		near.CallArgs("reset_world", map[string]any{"owner_id": root.ID, "world_seed": seed}, 50),
+		near.CallArgs("reset_world", map[string]any{"owner_id": root.ID, "world_seed": seed, "world_name": worldName()}, 50),
 	)
 	if err != nil {
 		return fmt.Errorf("reset %s: %w", marketID, err)
 	}
 	fmt.Println("deployed fresh code and a new world to", marketID, a.explorer(out.Hash))
 	return a.env.Set("HAAT_WORLD_SEED", strconv.FormatUint(seed, 10))
+}
+
+// worldName names a fresh world after the time it was made, so its storage
+// never overlaps an earlier world's.
+func worldName() string {
+	return "w" + strconv.FormatInt(time.Now().Unix(), 36)
 }
