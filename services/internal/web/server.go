@@ -44,10 +44,18 @@ type Server struct {
 
 	// MaxNewPlayersPerHour limits account creation so the demo cannot be drained.
 	MaxNewPlayersPerHour int
-	// MinRootNEAR stops new accounts when the root balance falls below it.
+	// MinRootNEAR stops new accounts and relaying when the root balance falls below it.
 	MinRootNEAR *big.Int
+	// TrustProxy believes X-Forwarded-For and X-Forwarded-Proto (set it only behind a known proxy).
+	TrustProxy bool
+	// PoolSize is how many player accounts are made ahead of time.
+	PoolSize int
 
 	sealer *Sealer
+	limits *limits
+	queue  *moveQueue
+	budget *gasBudget
+	pool   *accountPool
 	pages  map[string]*template.Template
 
 	mu       sync.Mutex
@@ -69,7 +77,10 @@ func New(cookieSecret string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{sealer: sealer, cacheTTL: 2 * time.Second, MaxNewPlayersPerHour: 30, MinRootNEAR: near.MustNEAR("0.5")}
+	s := &Server{
+		sealer: sealer, cacheTTL: 2 * time.Second, MaxNewPlayersPerHour: 60, MinRootNEAR: near.MustNEAR("0.5"),
+		limits: newLimits(), queue: newMoveQueue(), budget: &gasBudget{Limit: 3000},
+	}
 	if err := s.parse(); err != nil {
 		return nil, err
 	}
@@ -95,6 +106,18 @@ func (s *Server) parse() error {
 	return nil
 }
 
+// SetDailyBudget caps relayed transactions per UTC day (0 means no cap).
+func (s *Server) SetDailyBudget(n int) { s.budget.Limit = n }
+
+// Start runs the background work: the move queue and the account pool.
+func (s *Server) Start(ctx context.Context) {
+	go s.runQueue(ctx)
+	if s.PoolSize > 0 {
+		s.pool = &accountPool{ch: make(chan *players.Player, s.PoolSize)}
+		go s.fillPool(ctx)
+	}
+}
+
 // Handler returns the HTTP routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -103,6 +126,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("POST /start", s.start)
 	mux.HandleFunc("POST /act", s.act)
+	mux.HandleFunc("GET /pending", s.pending)
 	mux.HandleFunc("GET /ledger", s.ledger)
 	mux.HandleFunc("POST /ledger/reveal", s.reveal)
 	mux.HandleFunc("POST /ledger/forget", s.forget)
@@ -201,6 +225,13 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		s.unavailable(w, err)
 		return
 	}
+	pending, done, errs := s.queue.status(sess.Account, true)
+	data.Pending = pending
+	if len(errs) > 0 {
+		data.Flash = &flash{Kind: "err", Text: strings.TrimSpace(strings.Join(errs, " ") + " " + summarise(done))}
+	} else if len(done) > 0 {
+		data.Flash = &flash{Kind: "ok", Text: summarise(done)}
+	}
 	data.Page = "village"
 	data.Title = "The haat, day " + strconv.Itoa(snap.World.Day)
 	data.Player = buildPlayer(sess, pv, snap)
@@ -222,12 +253,31 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
+	_ = r.ParseForm()
+	// The inline script fills this field when the button is pressed; plain
+	// scripts posting to /start do not get an account.
+	if r.PostForm.Get("walked_in") != "yes" {
+		setFlash(w, "err", "Please press the button on the page to enter.")
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if !s.limits.startPerIP.allow(s.clientIP(r)) {
+		setFlash(w, "err", "You have opened several ledgers already this hour. Use the one you have, or come back later.")
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
 	if !s.allowNewPlayer(ctx) {
 		setFlash(w, "err", "The haat is very busy this hour. Please come back a little later.")
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	p, err := players.Create(ctx, s.Root, s.Market.Contract, players.RandomName())
+	var p *players.Player
+	var err error
+	select {
+	case p = <-s.poolCh():
+	default:
+		p, err = players.Create(ctx, s.Root, s.Market.Contract, players.RandomName())
+	}
 	if err != nil {
 		log.Printf("create player: %v", err)
 		setFlash(w, "err", "Could not open your village ledger. Please try again.")
@@ -244,6 +294,13 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 	s.invalidate()
 	setFlash(w, "ok", fmt.Sprintf("Welcome, %s. Here are 400 kauri to start. Gather something and sell it at a stall.", p.Name))
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) poolCh() chan *players.Player {
+	if s.pool == nil {
+		return nil // a nil channel never delivers, so start creates one directly
+	}
+	return s.pool.ch
 }
 
 func (s *Server) allowNewPlayer(ctx context.Context) bool {
@@ -269,10 +326,18 @@ func (s *Server) allowNewPlayer(ctx context.Context) bool {
 	return true
 }
 
-// act runs one player action through the relayer.
+// act takes one player action. With JavaScript, the page sends it in the
+// background and it joins the player's queue, which is flushed as one play()
+// call every second or so; the page shows it as pending at once. Without
+// JavaScript, the action is relayed straight away and the page reloads.
 func (s *Server) act(w http.ResponseWriter, r *http.Request) {
+	queued := r.Header.Get("X-Haat-Queue") == "1"
 	sess, ok := s.readSession(r)
 	if !ok {
+		if queued {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Your pass is missing. Reload the page."})
+			return
+		}
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -280,20 +345,48 @@ func (s *Server) act(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	if !s.limits.allowAct(sess.Account, s.clientIP(r)) {
+		s.reply(w, r, queued, "", errors.New("Slow down a little: the village ledger writes one page at a time."))
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 	s.Keeper.Touch()
-	res, err := s.perform(ctx, sess, r.PostForm)
+	q, err := s.prepare(ctx, sess, r.PostForm)
 	if err != nil {
-		setFlash(w, "err", friendlyError(err))
-	} else {
-		setFlash(w, "ok", res.message)
-		if res.feed != "" {
-			s.Keeper.Record(world.FeedItem{Who: players.DisplayName(sess.Account), Text: res.feed, TxHash: res.tx})
-		}
+		s.reply(w, r, queued, "", err)
+		return
+	}
+	if queued {
+		n := s.queue.push(sess, q)
+		writeJSON(w, http.StatusAccepted, map[string]any{"pending": n, "preview": q.preview})
+		return
+	}
+	done, errs := s.flushNow(ctx, sess, []*queuedMove{q})
+	if len(errs) > 0 {
+		setFlash(w, "err", errs[0])
+	} else if len(done) > 0 {
+		setFlash(w, "ok", summarise(done))
 	}
 	s.invalidate()
 	http.Redirect(w, r, "/#"+anchorFor(r.PostForm), http.StatusSeeOther)
+}
+
+// reply reports an error to a background request as JSON, or to a plain form as a flash.
+func (s *Server) reply(w http.ResponseWriter, r *http.Request, queued bool, msg string, err error) {
+	if queued {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": friendlyError(err)})
+		return
+	}
+	setFlash(w, "err", friendlyError(err))
+	http.Redirect(w, r, "/#"+anchorFor(r.PostForm), http.StatusSeeOther)
+}
+
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func anchorFor(f map[string][]string) string {
@@ -309,121 +402,6 @@ func first(f map[string][]string, k string) string {
 		return strings.TrimSpace(v[0])
 	}
 	return ""
-}
-
-// result is what the player is told, and what the village feed says about it.
-type result struct {
-	message, feed, tx string
-}
-
-func (s *Server) perform(ctx context.Context, sess Session, f map[string][]string) (result, error) {
-	key, err := sess.PlayKey()
-	if err != nil {
-		return result{}, err
-	}
-	kind := first(f, "kind")
-	merchantID := first(f, "merchant")
-	token := first(f, "token")
-	amount, _ := strconv.ParseInt(first(f, "amount"), 10, 64)
-	shopName := s.shopName(ctx, merchantID)
-
-	var mv market.Move
-	var describe func(v int64) string
-	feed := func(v int64) string { return "" }
-	switch kind {
-	case "gather":
-		place := first(f, "place")
-		item := placeItem(place)
-		if item == "" {
-			return result{}, errors.New("unknown place")
-		}
-		mv = market.MoveGather(place)
-		describe = func(v int64) string {
-			if v == 0 {
-				return fmt.Sprintf("Nothing grows at the %s this season. You came back empty handed.", placeName(place))
-			}
-			return fmt.Sprintf("You gathered %d %s at the %s.", v, merchant.Plural(item, v), placeName(place))
-		}
-	case "sell":
-		if amount < 1 || amount > 50 {
-			return result{}, errors.New("choose 1 to 50")
-		}
-		q, err := s.Market.Quote(ctx, merchantID, token, "sell", amount)
-		if err != nil {
-			return result{}, err
-		}
-		if q.Total == nil || *q.Total == 0 {
-			return result{}, fmt.Errorf("%s will not buy any more %s", shopName, merchant.Plural(token, 2))
-		}
-		mv = market.MoveSell(merchantID, token, amount, int64(*q.Total)*95/100)
-		describe = func(v int64) string {
-			return fmt.Sprintf("%s paid you %d kauri for %d %s.", shopName, v, amount, merchant.Plural(token, amount))
-		}
-		feed = func(v int64) string {
-			return fmt.Sprintf("sold %d %s to %s for %d kauri", amount, merchant.Plural(token, amount), shopName, v)
-		}
-	case "buy":
-		if amount < 1 || amount > 50 {
-			return result{}, errors.New("choose 1 to 50")
-		}
-		q, err := s.Market.Quote(ctx, merchantID, token, "buy", amount)
-		if err != nil {
-			return result{}, err
-		}
-		if q.Total == nil {
-			return result{}, fmt.Errorf("%s does not have %d %s", shopName, amount, merchant.Plural(token, amount))
-		}
-		mv = market.MoveBuy(merchantID, token, amount, int64(*q.Total)*105/100+1)
-		describe = func(v int64) string {
-			return fmt.Sprintf("You bought %d %s from %s for %d kauri.", amount, merchant.Plural(token, amount), shopName, v)
-		}
-		feed = func(v int64) string {
-			return fmt.Sprintf("bought %d %s from %s for %d kauri", amount, merchant.Plural(token, amount), shopName, v)
-		}
-	case "craft":
-		if amount < 1 || amount > 50 {
-			return result{}, errors.New("choose 1 to 50")
-		}
-		mv = market.MoveCraft("pickle", amount)
-		describe = func(v int64) string {
-			return fmt.Sprintf("You made %d %s.", v, merchant.Plural("pickle", v))
-		}
-	case "invest":
-		if amount < 10 {
-			return result{}, errors.New("invest at least 10 kauri")
-		}
-		mv = market.MoveInvest(merchantID, amount)
-		describe = func(v int64) string {
-			return fmt.Sprintf("You invested %d kauri in %s's shop and got %d shares.", amount, shopName, v)
-		}
-		feed = func(v int64) string {
-			return fmt.Sprintf("invested %d kauri in %s's shop", amount, shopName)
-		}
-	case "claim":
-		mv = market.MoveClaim(merchantID)
-		describe = func(v int64) string {
-			if v == 0 {
-				return "No dividends waiting yet. They arrive when the shop closes a profitable day."
-			}
-			return fmt.Sprintf("You collected %d kauri of dividends from %s.", v, shopName)
-		}
-	default:
-		return result{}, errors.New("unknown action")
-	}
-	out, err := players.Act(ctx, s.Relayer, &players.Player{AccountID: sess.Account, Play: key}, market.Play(mv))
-	if err != nil {
-		return result{}, err
-	}
-	if merchantID != "" && kind != "claim" {
-		s.Keeper.Nudge(merchantID)
-	}
-	var vals []market.U128
-	_ = json.Unmarshal(out.Value, &vals)
-	var v int64
-	if len(vals) > 0 {
-		v = int64(vals[0])
-	}
-	return result{message: describe(v), feed: feed(v), tx: out.Hash}, nil
 }
 
 func (s *Server) shopName(ctx context.Context, id string) string {
@@ -464,6 +442,9 @@ func friendlyError(err error) string {
 	msg = strings.TrimPrefix(msg, "Smart contract panicked: ")
 	if len(msg) > 160 {
 		msg = msg[:160]
+	}
+	if strings.HasSuffix(msg, ".") {
+		return upperFirst(msg)
 	}
 	return upperFirst(msg) + "."
 }
@@ -585,6 +566,17 @@ func (s *Server) marketPage(w http.ResponseWriter, r *http.Request) {
 
 // fastForward starts a week of back-to-back trading.
 func (s *Server) fastForward(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.readSession(r)
+	if !ok {
+		setFlash(w, "err", "Enter the haat first, then you can fast-forward the week.")
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if !s.limits.ffPerAcct.allow(sess.Account) {
+		setFlash(w, "err", "You fast-forwarded a little while ago. Give the village a few minutes.")
+		http.Redirect(w, r, "/market", http.StatusSeeOther)
+		return
+	}
 	switch err := s.Keeper.StartFastForward(7); {
 	case errors.Is(err, world.ErrCapped):
 		setFlash(w, "err", "The village has already fast-forwarded this hour, to keep the shared demo affordable. Run it locally with `make localnet` for as many weeks as you like.")

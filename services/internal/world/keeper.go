@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/big"
 	"sync"
 	"time"
 
@@ -417,3 +418,44 @@ var (
 	// ErrCapped means the hourly fast-forward cap is reached.
 	ErrCapped = errors.New("the village has fast-forwarded enough this hour")
 )
+
+// StorageHeadroom is the free NEAR the market contract keeps for new storage.
+// When it falls below the floor, the root account tops it up.
+var (
+	storageFloor = near.MustNEAR("0.8")
+	storageTopUp = near.MustNEAR("1")
+)
+
+// WatchStorage checks the market contract's free balance every few minutes
+// and tops it up from the root before writes could fail.
+func (k *Keeper) WatchStorage(ctx context.Context) {
+	t := time.NewTicker(5 * time.Minute)
+	defer t.Stop()
+	for {
+		k.checkStorage(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+func (k *Keeper) checkStorage(ctx context.Context) {
+	bal, used, err := k.Market.RPC.AccountState(ctx, k.Market.Contract)
+	if err != nil {
+		log.Printf("storage watch: %v", err)
+		return
+	}
+	locked := new(big.Int).Mul(new(big.Int).SetUint64(used), near.StorageCost)
+	free := new(big.Int).Sub(bal, locked)
+	if free.Cmp(storageFloor) >= 0 {
+		return
+	}
+	out, err := k.Root.Send(ctx, k.Market.Contract, near.Transfer{Deposit: storageTopUp})
+	if err != nil {
+		log.Printf("storage watch: top-up failed: %v", err)
+		return
+	}
+	log.Printf("storage watch: market had %s yoctoNEAR free for %d bytes; topped up 1 NEAR (%s)", free, used, out.Hash)
+}

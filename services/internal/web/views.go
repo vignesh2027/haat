@@ -36,6 +36,7 @@ type pageData struct {
 	VoiceOn   bool
 	FF        world.FastForward
 	FFLeft    int
+	Pending   int
 }
 
 type playerVM struct {

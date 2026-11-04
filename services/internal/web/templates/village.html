@@ -6,7 +6,7 @@
     <h2>Your basket</h2>
     <ul class="basket-list">
       {{range .Player.Basket}}
-      <li class="{{if eq .Count 0}}empty{{end}}"><span class="ico">{{.Emoji}}</span><span class="nm">{{.Label}}</span><b>{{.Count}}</b></li>
+      <li class="{{if eq .Count 0}}empty{{end}}" data-token="{{.Token}}"><span class="ico">{{.Emoji}}</span><span class="nm">{{.Label}}</span><b>{{.Count}}</b></li>
       {{end}}
     </ul>
     <p class="networth">Worth about <b>🐚 {{num .Player.NetWorth}}</b> at city prices</p>
@@ -17,7 +17,7 @@
     <p class="sub">Each trip uses one energy. {{.Player.Energy}} left today.</p>
     <div class="place-grid">
       {{range .Places}}
-      <form method="post" action="/act" class="place{{if .Barren}} barren{{end}}">
+      <form method="post" action="/act" data-q class="place{{if .Barren}} barren{{end}}">
         <input type="hidden" name="kind" value="gather"><input type="hidden" name="place" value="{{.Place}}">
         <button type="submit" {{if eq $.Player.Energy 0}}disabled{{end}}>
           <span class="place-e">{{.Emoji}}</span>
@@ -33,7 +33,7 @@
     <h2>Make pickle <span class="hi">achaar</span></h2>
     <p class="sub">🥭 🥭 + 🌶️ makes one 🫙. The city pays double near Diwali.</p>
     {{if gt .Player.CanCraft 0}}
-    <form method="post" action="/act" class="row">
+    <form method="post" action="/act" data-q class="row">
       <input type="hidden" name="kind" value="craft">
       <button class="btn btn-violet" name="amount" value="1">Make 1 jar</button>
       {{if gt .Player.CanCraft 1}}<button class="btn btn-ghost" name="amount" value="{{.Player.CanCraft}}">Make {{.Player.CanCraft}}</button>{{end}}
@@ -45,7 +45,7 @@
   <section class="card shares">
     <h2>Your shares</h2>
     {{range .Player.Holdings}}
-    <form method="post" action="/act" class="share-row">
+    <form method="post" action="/act" data-q class="share-row">
       <input type="hidden" name="kind" value="claim"><input type="hidden" name="merchant" value="{{.MerchantID}}">
       <div><b>{{.Name}}</b><small>{{num .Shares}} shares, {{.Stake}} of profits</small></div>
       {{if gt .Pending 0}}<button class="btn btn-small btn-primary nowrap">Collect 🐚 {{.Pending}}</button>{{else}}<span class="muted small nowrap">no dividend yet</span>{{end}}
@@ -82,7 +82,7 @@
               <span class="tip-body" role="tooltip"><b>{{.BidTip.Headline}}</b>{{range .BidTip.Lines}}<span>{{.}}</span>{{end}}</span>
             </span>
             {{if and $stall.Open .SellOptions}}
-            <form method="post" action="/act" class="qty">
+            <form method="post" action="/act" data-q class="qty">
               <input type="hidden" name="kind" value="sell"><input type="hidden" name="merchant" value="{{$stall.Account}}"><input type="hidden" name="token" value="{{.Token}}">
               {{range .SellOptions}}<button class="btn btn-small btn-primary" name="amount" value="{{.}}">Sell {{.}}</button>{{end}}
             </form>
@@ -95,7 +95,7 @@
               <span class="tip-body" role="tooltip"><b>{{.AskTip.Headline}}</b>{{range .AskTip.Lines}}<span>{{.}}</span>{{end}}</span>
             </span>
             {{if and $stall.Open .BuyOptions}}
-            <form method="post" action="/act" class="qty">
+            <form method="post" action="/act" data-q class="qty">
               <input type="hidden" name="kind" value="buy"><input type="hidden" name="merchant" value="{{$stall.Account}}"><input type="hidden" name="token" value="{{.Token}}">
               {{range .BuyOptions}}<button class="btn btn-small btn-ghost" name="amount" value="{{.}}">Buy {{.}}</button>{{end}}
             </form>
@@ -107,7 +107,7 @@
       </div>
 
       <footer class="stall-foot">
-        <form method="post" action="/act" class="invest">
+        <form method="post" action="/act" data-q class="invest">
           <input type="hidden" name="kind" value="invest"><input type="hidden" name="merchant" value="{{.Account}}">
           <span>Invest in this shop</span>
           <button class="btn btn-small btn-ghost" name="amount" value="50">🐚 50</button>
@@ -121,7 +121,7 @@
         <div class="shutter-sign">
           <b>Closed</b>
           <span>{{.Name}} ran out of money. Invest to reopen the shop and earn a share of its profits.</span>
-          <form method="post" action="/act" class="row">
+          <form method="post" action="/act" data-q class="row">
             <input type="hidden" name="kind" value="invest"><input type="hidden" name="merchant" value="{{.Account}}">
             <button class="btn btn-danger" name="amount" value="100">Invest 🐚 100</button>
             <button class="btn btn-ghost" name="amount" value="250">🐚 250</button>

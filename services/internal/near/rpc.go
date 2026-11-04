@@ -153,6 +153,25 @@ func (c *Client) AccountBalance(ctx context.Context, account string) (*big.Int, 
 	return v, true, nil
 }
 
+// AccountState returns an account's balance in yoctoNEAR and the bytes of storage it uses.
+func (c *Client) AccountState(ctx context.Context, account string) (*big.Int, uint64, error) {
+	var out struct {
+		Amount       string `json:"amount"`
+		StorageUsage uint64 `json:"storage_usage"`
+	}
+	err := c.call(ctx, "query", map[string]any{
+		"request_type": "view_account", "finality": "optimistic", "account_id": account,
+	}, &out)
+	if err != nil {
+		return nil, 0, err
+	}
+	v, _ := new(big.Int).SetString(out.Amount, 10)
+	return v, out.StorageUsage, nil
+}
+
+// StorageCost is the NEAR locked per byte of storage (10^19 yoctoNEAR).
+var StorageCost = new(big.Int).Exp(big.NewInt(10), big.NewInt(19), nil)
+
 // View calls a view method and decodes its JSON result into out.
 func (c *Client) View(ctx context.Context, contract, method string, args any, out any) error {
 	argBytes, err := json.Marshal(args)

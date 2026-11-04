@@ -95,14 +95,10 @@ func (srv *Server) writeSession(w http.ResponseWriter, r *http.Request, sess Ses
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: cookieName, Value: v, Path: "/", HttpOnly: true,
-		SameSite: http.SameSiteLaxMode, Secure: isHTTPS(r),
+		SameSite: http.SameSiteLaxMode, Secure: r.TLS != nil || (srv.TrustProxy && r.Header.Get("X-Forwarded-Proto") == "https"),
 		Expires: time.Now().AddDate(1, 0, 0),
 	})
 	return nil
-}
-
-func isHTTPS(r *http.Request) bool {
-	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }
 
 // Flash messages survive one redirect.

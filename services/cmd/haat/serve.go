@@ -87,7 +87,17 @@ func (a *app) serve(ctx context.Context) error {
 		srv.MaxNewPlayersPerHour = n
 	}
 
+	srv.TrustProxy = a.env.Get("HAAT_TRUST_PROXY") == "1"
+	srv.PoolSize = 2
+	if n, err := strconv.Atoi(a.env.Get("HAAT_ACCOUNT_POOL")); err == nil && n >= 0 {
+		srv.PoolSize = n
+	}
+	if n, err := strconv.Atoi(a.env.Get("HAAT_DAILY_TX_BUDGET")); err == nil && n >= 0 {
+		srv.SetDailyBudget(n)
+	}
+	srv.Start(ctx)
 	go k.Run(ctx)
+	go k.WatchStorage(ctx)
 	addr := ":" + a.env.Or("PORT", "8080")
 	hs := &http.Server{Addr: addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {

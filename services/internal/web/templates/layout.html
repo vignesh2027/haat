@@ -12,7 +12,7 @@
 {{if .FF.Running}}<meta http-equiv="refresh" content="4">{{end}}
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐚</text></svg>">
 </head>
-<body class="page-{{.Page}}{{if .World.Flood}} is-flood{{end}} season-{{.World.Season}}">
+<body class="page-{{.Page}}{{if .World.Flood}} is-flood{{end}} season-{{.World.Season}}" data-pending="{{.Pending}}">
 <a id="top"></a>
 <header class="topbar">
   <a class="brand" href="/"><span class="brand-shell" aria-hidden="true">🐚</span><span class="brand-word">Haat</span></a>
@@ -52,8 +52,35 @@
 </footer>
 
 <div class="busy" aria-hidden="true"><div class="busy-card"><span class="busy-shell">🐚</span><span>Writing it in the village ledger…</span></div></div>
+<div class="onway" id="onway" hidden><span class="onway-dot"></span><span id="onway-text"></span></div>
 <script>
-document.addEventListener("submit",function(e){var f=e.target;if(f.dataset.busy)return;f.dataset.busy=1;document.body.classList.add("is-busy");});
+// The only script on the page. Moves are sent in the background and queued on
+// the server, which writes them to the chain in one batch every second or so.
+(function(){
+  var body=document.body, chip=document.getElementById("onway"), text=document.getElementById("onway-text"), polling=false;
+  function show(n,msg){ if(n>0){chip.hidden=false;text.textContent=(msg?msg+". ":"")+n+(n==1?" move":" moves")+" on the way";} else chip.hidden=true; }
+  function toast(kind,msg){ var t=document.createElement("div"); t.className="toast toast-"+kind+" toast-float"; t.textContent=msg; body.appendChild(t); setTimeout(function(){t.remove();},4000); }
+  function poll(){ if(polling)return; polling=true; (function tick(){ fetch("/pending",{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){ if(j.pending>0){show(j.pending);setTimeout(tick,800);} else {location.reload();} }).catch(function(){setTimeout(tick,2000);}); })(); }
+  function bump(f){ var k=f.querySelector("[name=kind]"), tok=f.querySelector("[name=token]"); var amt=f._amount||1;
+    if(k&&k.value=="gather"){ var on=document.querySelectorAll(".energy i.on"); if(on.length) on[on.length-1].className=""; }
+    if(k&&k.value=="sell"&&tok){ var b=document.querySelector('.basket-list [data-token="'+tok.value+'"] b'); if(b) b.textContent=Math.max(0,parseInt(b.textContent,10)-amt); } }
+  document.addEventListener("submit",function(e){
+    var f=e.target;
+    if(f.hasAttribute("data-q")&&window.fetch){
+      e.preventDefault();
+      var fd=new FormData(f); if(e.submitter&&e.submitter.name){fd.set(e.submitter.name,e.submitter.value); f._amount=parseInt(e.submitter.value,10)||1;}
+      if(e.submitter){e.submitter.classList.add("tapped");setTimeout(function(){e.submitter.classList.remove("tapped");},400);}
+      fetch("/act",{method:"POST",body:new URLSearchParams(fd),headers:{"X-Haat-Queue":"1"},credentials:"same-origin"})
+        .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+        .then(function(x){ if(x.ok){bump(f);show(x.j.pending,x.j.preview);poll();} else toast("err",x.j.error||"That did not work."); })
+        .catch(function(){ toast("err","The village is not answering. Try again."); });
+      return;
+    }
+    var w=f.querySelector("[name=walked_in]"); if(w) w.value="yes";
+    if(f.dataset.busy)return; f.dataset.busy=1; body.classList.add("is-busy");
+  });
+  if(parseInt(body.dataset.pending||"0",10)>0){show(parseInt(body.dataset.pending,10));poll();}
+})();
 </script>
 </body>
 </html>
