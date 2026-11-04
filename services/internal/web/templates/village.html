@@ -48,7 +48,7 @@
     <form method="post" action="/act" class="share-row">
       <input type="hidden" name="kind" value="claim"><input type="hidden" name="merchant" value="{{.MerchantID}}">
       <div><b>{{.Name}}</b><small>{{num .Shares}} shares, {{.Stake}} of profits</small></div>
-      <button class="btn btn-small {{if gt .Pending 0}}btn-primary{{else}}btn-ghost{{end}}">Collect 🐚 {{.Pending}}</button>
+      {{if gt .Pending 0}}<button class="btn btn-small btn-primary nowrap">Collect 🐚 {{.Pending}}</button>{{else}}<span class="muted small nowrap">no dividend yet</span>{{end}}
     </form>
     {{end}}
   </section>
@@ -69,7 +69,7 @@
         <div class="who"><h2>{{.Name}}</h2><span class="tag">{{.Temperament}}</span></div>
         <div class="till" title="Cash box"><span class="mood" aria-hidden="true">{{.Mood}}</span><span>🐚 {{num .Purse}}</span></div>
       </header>
-      {{if .Note}}<blockquote class="note">{{if .Voice}}{{.Voice}}{{else}}{{.Note}}{{end}}</blockquote>{{end}}
+      {{if .Note}}<blockquote class="note" title="Note signed on chain: {{.Note}}">{{if .Voice}}{{.Voice}}{{else}}{{.Note}}{{end}}</blockquote>{{end}}
 
       <div class="shelves">
       {{$stall := .}}

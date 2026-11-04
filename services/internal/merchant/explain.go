@@ -16,6 +16,9 @@ var ItemNames = map[string]string{
 func Plural(item string, n int64) string {
 	name := ItemNames[item]
 	if n == 1 {
+		if item == "pickle" {
+			return "jar of pickle"
+		}
 		return name
 	}
 	switch item {

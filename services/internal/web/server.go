@@ -5,8 +5,10 @@ package web
 
 import (
 	"context"
+	"crypto/sha256"
 	"embed"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,6 +75,13 @@ func New(cookieSecret string) (*Server, error) {
 	}
 	return s, nil
 }
+
+// cssVersion is a short hash of the stylesheet, so browsers reload it after a change.
+var cssVersion = func() string {
+	b, _ := assets.ReadFile("static/haat.css")
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:4])
+}()
 
 func (s *Server) parse() error {
 	s.pages = map[string]*template.Template{}

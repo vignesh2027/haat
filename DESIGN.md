@@ -137,7 +137,7 @@ Each is a separate NEAR account run by its own agent loop. Personalities are det
 | Bashir Bhai | fish, rice | Reads the panchang | Normal margin (12%). Two days before a flood it lowers targets, widens margin and sells surplus to the city while the road is still open. |
 | Lakshmi Amma | mango, pickle | Craftswoman | Buys mangoes in summer, buys chilli from the city and turns them into pickle that she sells near Diwali. |
 
-Every decision produces a short plain-words reason built from the same numbers the rules used. If a free open model endpoint is configured (Groq, `llama-3.1-8b-instant`), the agent may also rewrite that reason in the shopkeeper's voice for flavour. The model never sets a number. If the endpoint is missing or slow, the plain reason is shown.
+Every decision produces a short plain-words reason built from the same numbers the rules used, and the shopkeeper signs it on chain as its note. If a free open model endpoint is configured (Groq, the open-weights `openai/gpt-oss-20b`), the page may show that note rewritten in the shopkeeper's voice for flavour; hovering the note shows the plain on-chain text. The model never sets a number and pages never wait for it. If no key is set or the call fails, the plain note is shown.
 
 NEAR AI Cloud was checked first as the sponsor's inference offering. It needs an API key from its dashboard and paid credits, so the default is Groq's free tier, and the game runs fine with no model at all.
 
@@ -193,7 +193,7 @@ There is no seed phrase, wallet popup or gas prompt in the normal loop.
 2. Both private keys go into an encrypted, signed, HTTP-only cookie (AES-GCM with a server secret). The server keeps no database of player keys. It decrypts the play key only while signing a request.
 3. Every player action is a NEP-366 meta transaction: the play key signs a delegate action calling the market contract, and the root account (acting as relayer) wraps it in a transaction and pays the gas. The player account holds only the small balance needed for its own storage. A function-call access key may sign only one action per transaction, so the player's moves are batched into a single `play(moves)` call.
 4. The relayer only accepts delegate actions whose sole receiver is the market contract and whose actions are no-deposit function calls, so it cannot be used to burn its gas on anything else.
-5. The "Your ledger" page states this honestly: it shows the account id, links to the explorer, and lets the player download the recovery key as a standard near-cli credentials file and take the account anywhere.
+5. The "Your ledger" page states this plainly: it shows the account id, links to the explorer, and has a "Take your account with you" button that shows the recovery key once, offers it as a standard near-cli credentials file, and then removes it from the cookie. After that the game holds no key that can move the account's NEAR or sign anything outside the market contract; the account is the player's alone.
 
 Social or email login: no free hosted option exists that works without a JavaScript wallet SDK and a dashboard sign-up, which this project's stack and automation rules exclude. The implicit, auto-created account is the honest frictionless alternative. A "continue on another device" link carries the encrypted cookie value.
 

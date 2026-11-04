@@ -226,6 +226,13 @@ func (a *app) bootstrap(ctx context.Context) error {
 		}
 		fmt.Println("opened", len(adds), "shops", a.explorer(out.Hash))
 	}
+	if a.env.Get("HAAT_COOKIE_SECRET") == "" {
+		var b [32]byte
+		_, _ = rand.Read(b[:])
+		if err := a.env.Set("HAAT_COOKIE_SECRET", hex.EncodeToString(b[:])); err != nil {
+			return err
+		}
+	}
 	fmt.Println("bootstrap complete")
 	return a.status(ctx)
 }

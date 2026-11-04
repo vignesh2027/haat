@@ -42,7 +42,7 @@
   <div class="dash-cols">
     <section class="card">
       <h2>Today at the stalls</h2>
-      <table class="tbl">
+      <div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Shop</th><th>Item</th><th>Stock</th><th>Pays</th><th>Asks</th><th>Cash</th></tr></thead>
         <tbody>
         {{range .Stalls}}{{$s := .}}
@@ -56,7 +56,7 @@
           {{end}}
         {{end}}
         </tbody>
-      </table>
+      </table></div>
     </section>
     <section class="card">
       <h2>Village chronicle</h2>

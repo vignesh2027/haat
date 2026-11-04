@@ -391,5 +391,6 @@ func funcs(s *Server) template.FuncMap {
 			return b.String()
 		},
 		"isLocal": func() bool { return s.Network == "localnet" },
+		"css":     func() string { return "/static/haat.css?v=" + cssVersion },
 	}
 }

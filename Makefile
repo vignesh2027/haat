@@ -1,4 +1,4 @@
-.PHONY: all contract build test test-unit test-contract test-sandbox test-go bootstrap smoke status clean
+.PHONY: all contract build test test-unit test-contract test-sandbox test-go bootstrap smoke status serve clean
 
 WASM := contract/target/near/haat_market.wasm
 
@@ -37,6 +37,10 @@ smoke: build
 
 status: build
 	./bin/haat status
+
+## Run the web game, the day clock and the shopkeeper agents.
+serve: build
+	./bin/haat serve
 
 clean:
 	rm -rf bin contract/target
