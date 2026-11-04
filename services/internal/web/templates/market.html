@@ -1,0 +1,69 @@
+{{define "main"}}
+<div class="dash">
+  <div class="dash-head">
+    <div>
+      <p class="eyebrow">Market dashboard</p>
+      <h1>The village economy</h1>
+      <p class="sub">Read straight from the market contract: end-of-day prices, every shop's cash box, bankruptcies and floods.</p>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><span>Day</span><b>{{.World.Day}}</b><small>{{.Season}}</small></div>
+    <div class="kpi"><span>Players</span><b>{{.World.Players}}</b><small>accounts in the village</small></div>
+    <div class="kpi"><span>Kauri in shops</span><b>🐚 {{num .Dash.TotalKauri}}</b><small>across four cash boxes</small></div>
+    <div class="kpi {{if gt .Dash.Closed 0}}kpi-bad{{end}}"><span>Shops closed</span><b>{{.Dash.Closed}}</b><small>waiting for investors</small></div>
+    <div class="kpi"><span>Flood days</span><b>{{.Dash.Floods}}</b><small>in the last {{.Dash.Days}} days</small></div>
+  </div>
+
+  <div class="legend">{{range .Dash.Legend}}<span><i style="background:{{.Color}}"></i>{{.Name}}</span>{{end}}<span><i class="flood-key"></i>flood day</span></div>
+
+  {{if lt .Dash.Days 2}}<p class="card muted">Charts appear once a day has passed. Play a little, or run the fast-forward week in local mode.</p>{{else}}
+  <div class="charts">
+  {{range .Dash.Charts}}
+    <figure class="card chart">
+      <figcaption><b>{{.Title}}</b><small>{{.Sub}}</small></figcaption>
+      <svg viewBox="0 0 {{.W}} {{.H}}" role="img" aria-label="{{.Title}}">
+        {{range .Floods}}<rect class="c-flood" x="{{.X}}" y="12" width="{{.W}}" height="162"/>{{end}}
+        {{range .YTicks}}<line class="c-grid" x1="44" x2="576" y1="{{.Pos}}" y2="{{.Pos}}"/><text class="c-lab" x="38" y="{{.Pos}}" text-anchor="end" dominant-baseline="middle">{{.Label}}</text>{{end}}
+        {{range .XTicks}}<text class="c-lab" x="{{.Pos}}" y="192" text-anchor="middle">{{.Label}}</text>{{end}}
+        {{with .Threshold}}<line class="c-thresh" x1="44" x2="576" y1="{{.Pos}}" y2="{{.Pos}}"/><text class="c-lab c-thresh-l" x="580" y="{{.Pos}}" dominant-baseline="middle">{{.Label}}</text>{{end}}
+        {{range .Lines}}
+          <path d="{{.Path}}" fill="none" stroke="{{.Color}}" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round"/>
+          {{$c := .Color}}{{range .Dots}}<circle cx="{{.X}}" cy="{{.Y}}" r="2.2" fill="{{$c}}"/>{{end}}
+          <text class="c-end" x="{{.EndX}}" dx="8" y="{{.EndY}}" fill="{{.Color}}" dominant-baseline="middle">{{.Last}}</text>
+        {{end}}
+      </svg>
+    </figure>
+  {{end}}
+  </div>
+  {{end}}
+
+  <div class="dash-cols">
+    <section class="card">
+      <h2>Today at the stalls</h2>
+      <table class="tbl">
+        <thead><tr><th>Shop</th><th>Item</th><th>Stock</th><th>Pays</th><th>Asks</th><th>Cash</th></tr></thead>
+        <tbody>
+        {{range .Stalls}}{{$s := .}}
+          {{range $i, $sh := .Shelves}}
+          <tr class="{{if not $s.Open}}row-closed{{end}}">
+            <td>{{if eq $i 0}}<b>{{$s.Name}}</b>{{if not $s.Open}} <span class="pill pill-danger">closed</span>{{end}}{{end}}</td>
+            <td>{{$sh.Emoji}} {{$sh.Label}}</td><td>{{$sh.Stock}}</td><td>🐚 {{$sh.Bid}}</td>
+            <td>{{if $sh.HasAsk}}🐚 {{$sh.Ask}}{{else}}sold out{{end}}</td>
+            <td>{{if eq $i 0}}🐚 {{num $s.Purse}}{{end}}</td>
+          </tr>
+          {{end}}
+        {{end}}
+        </tbody>
+      </table>
+    </section>
+    <section class="card">
+      <h2>Village chronicle</h2>
+      <ul class="chron">
+        {{range .Chronicle}}<li class="{{if .Important}}imp{{end}}"><span class="chron-e">{{.Emoji}}</span><span class="chron-d">Day {{.Day}}</span> {{.Text}}</li>{{end}}
+      </ul>
+    </section>
+  </div>
+</div>
+{{end}}

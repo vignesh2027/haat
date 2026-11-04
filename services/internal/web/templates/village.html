@@ -1,0 +1,168 @@
+{{define "main"}}
+<div class="village">
+
+<aside class="col col-left">
+  <section class="card basket">
+    <h2>Your basket</h2>
+    <ul class="basket-list">
+      {{range .Player.Basket}}
+      <li class="{{if eq .Count 0}}empty{{end}}"><span class="ico">{{.Emoji}}</span><span class="nm">{{.Label}}</span><b>{{.Count}}</b></li>
+      {{end}}
+    </ul>
+    <p class="networth">Worth about <b>🐚 {{num .Player.NetWorth}}</b> at city prices</p>
+  </section>
+
+  <section class="card places">
+    <h2>Around the village</h2>
+    <p class="sub">Each trip uses one energy. {{.Player.Energy}} left today.</p>
+    <div class="place-grid">
+      {{range .Places}}
+      <form method="post" action="/act" class="place{{if .Barren}} barren{{end}}">
+        <input type="hidden" name="kind" value="gather"><input type="hidden" name="place" value="{{.Place}}">
+        <button type="submit" {{if eq $.Player.Energy 0}}disabled{{end}}>
+          <span class="place-e">{{.Emoji}}</span>
+          <span class="place-n">{{.Name}}</span>
+          <span class="place-y">{{.ItemEmoji}} {{.Yield}}</span>
+        </button>
+      </form>
+      {{end}}
+    </div>
+  </section>
+
+  <section class="card craft">
+    <h2>Make pickle <span class="hi">achaar</span></h2>
+    <p class="sub">🥭 🥭 + 🌶️ makes one 🫙. The city pays double near Diwali.</p>
+    {{if gt .Player.CanCraft 0}}
+    <form method="post" action="/act" class="row">
+      <input type="hidden" name="kind" value="craft">
+      <button class="btn btn-violet" name="amount" value="1">Make 1 jar</button>
+      {{if gt .Player.CanCraft 1}}<button class="btn btn-ghost" name="amount" value="{{.Player.CanCraft}}">Make {{.Player.CanCraft}}</button>{{end}}
+    </form>
+    {{else}}<p class="muted">You need 2 mangoes and 1 chilli.</p>{{end}}
+  </section>
+
+  {{if .Player.Holdings}}
+  <section class="card shares">
+    <h2>Your shares</h2>
+    {{range .Player.Holdings}}
+    <form method="post" action="/act" class="share-row">
+      <input type="hidden" name="kind" value="claim"><input type="hidden" name="merchant" value="{{.MerchantID}}">
+      <div><b>{{.Name}}</b><small>{{num .Shares}} shares, {{.Stake}} of profits</small></div>
+      <button class="btn btn-small {{if gt .Pending 0}}btn-primary{{else}}btn-ghost{{end}}">Collect 🐚 {{.Pending}}</button>
+    </form>
+    {{end}}
+  </section>
+  {{end}}
+</aside>
+
+<section class="square" aria-label="The haat square">
+  <div class="square-head">
+    <h1>The haat square</h1>
+    <p class="sub">Hover or tap a price to hear how the shopkeeper set it.</p>
+  </div>
+  <div class="stalls">
+    {{range .Stalls}}
+    <article class="stall stall-{{.Key}}{{if not .Open}} is-closed{{end}}" id="stall-{{.Key}}">
+      <div class="awning" aria-hidden="true"></div>
+      <header class="stall-head">
+        <span class="face" aria-hidden="true">{{.Face}}</span>
+        <div class="who"><h2>{{.Name}}</h2><span class="tag">{{.Temperament}}</span></div>
+        <div class="till" title="Cash box"><span class="mood" aria-hidden="true">{{.Mood}}</span><span>🐚 {{num .Purse}}</span></div>
+      </header>
+      {{if .Note}}<blockquote class="note">{{if .Voice}}{{.Voice}}{{else}}{{.Note}}{{end}}</blockquote>{{end}}
+
+      <div class="shelves">
+      {{$stall := .}}
+      {{range .Shelves}}
+        <div class="shelf">
+          <div class="shelf-item"><span class="ico">{{.Emoji}}</span><span><b>{{.Label}}</b><small>{{.Stock}} on the shelf</small></span></div>
+          <div class="shelf-side">
+            <span class="side-l">{{if $stall.Open}}Pays{{else}}Paid{{end}}</span>
+            <span class="price tip" tabindex="0">🐚 {{.Bid}}
+              <span class="tip-body" role="tooltip"><b>{{.BidTip.Headline}}</b>{{range .BidTip.Lines}}<span>{{.}}</span>{{end}}</span>
+            </span>
+            {{if and $stall.Open .SellOptions}}
+            <form method="post" action="/act" class="qty">
+              <input type="hidden" name="kind" value="sell"><input type="hidden" name="merchant" value="{{$stall.Account}}"><input type="hidden" name="token" value="{{.Token}}">
+              {{range .SellOptions}}<button class="btn btn-small btn-primary" name="amount" value="{{.}}">Sell {{.}}</button>{{end}}
+            </form>
+            {{else if $stall.Open}}<span class="muted small">none in your basket</span>{{end}}
+          </div>
+          <div class="shelf-side">
+            <span class="side-l">Asks</span>
+            {{if .HasAsk}}
+            <span class="price tip ask" tabindex="0">🐚 {{.Ask}}
+              <span class="tip-body" role="tooltip"><b>{{.AskTip.Headline}}</b>{{range .AskTip.Lines}}<span>{{.}}</span>{{end}}</span>
+            </span>
+            {{if and $stall.Open .BuyOptions}}
+            <form method="post" action="/act" class="qty">
+              <input type="hidden" name="kind" value="buy"><input type="hidden" name="merchant" value="{{$stall.Account}}"><input type="hidden" name="token" value="{{.Token}}">
+              {{range .BuyOptions}}<button class="btn btn-small btn-ghost" name="amount" value="{{.}}">Buy {{.}}</button>{{end}}
+            </form>
+            {{end}}
+            {{else}}<span class="muted small">sold out</span>{{end}}
+          </div>
+        </div>
+      {{end}}
+      </div>
+
+      <footer class="stall-foot">
+        <form method="post" action="/act" class="invest">
+          <input type="hidden" name="kind" value="invest"><input type="hidden" name="merchant" value="{{.Account}}">
+          <span>Invest in this shop</span>
+          <button class="btn btn-small btn-ghost" name="amount" value="50">🐚 50</button>
+          <button class="btn btn-small btn-ghost" name="amount" value="200">🐚 200</button>
+        </form>
+        <a class="onchain" href="{{acct .Account}}" target="_blank" rel="noopener" title="This shopkeeper's own NEAR account">ledger</a>
+      </footer>
+
+      {{if not .Open}}
+      <div class="shutter">
+        <div class="shutter-sign">
+          <b>Closed</b>
+          <span>{{.Name}} ran out of money. Invest to reopen the shop and earn a share of its profits.</span>
+          <form method="post" action="/act" class="row">
+            <input type="hidden" name="kind" value="invest"><input type="hidden" name="merchant" value="{{.Account}}">
+            <button class="btn btn-danger" name="amount" value="100">Invest 🐚 100</button>
+            <button class="btn btn-ghost" name="amount" value="250">🐚 250</button>
+          </form>
+        </div>
+      </div>
+      {{end}}
+    </article>
+    {{end}}
+  </div>
+</section>
+
+<aside class="col col-right">
+  <section class="card panchang">
+    <h2>Panchang <span class="hi">almanac</span></h2>
+    <ul class="fc">
+      <li class="today"><span class="fc-e">{{.Weather}}</span><span><b>Today, day {{.World.Day}}</b><small>{{if .World.Flood}}Road flooded, no city cart{{else}}Road open, city cart comes{{end}}</small></span></li>
+      {{range .Forecast}}
+      <li class="{{if .Flood}}flood{{end}}"><span class="fc-e">{{.Emoji}}</span><span><b>Day {{.Day}}</b><small>{{.Label}}</small></span></li>
+      {{end}}
+    </ul>
+  </section>
+
+  <section class="card feed">
+    <h2>What is happening</h2>
+    <ul class="feed-list">
+      {{range .Feed}}
+      <li{{if .Failed}} class="failed"{{end}}><b>{{.Who}}</b> {{.Text}}{{if .Tx}} <a class="onchain" href="{{tx .Tx}}" target="_blank" rel="noopener">tx</a>{{end}}<small>{{.When}}</small></li>
+      {{else}}
+      <li class="muted">The shopkeepers are sipping chai. Trade with them and they will react.</li>
+      {{end}}
+    </ul>
+  </section>
+
+  <section class="card chronicle">
+    <h2>Village chronicle</h2>
+    <ul class="chron">
+      {{range .Chronicle}}<li class="{{if .Important}}imp{{end}}"><span class="chron-e">{{.Emoji}}</span><span class="chron-d">Day {{.Day}}</span> {{.Text}}</li>{{end}}
+    </ul>
+  </section>
+</aside>
+
+</div>
+{{end}}

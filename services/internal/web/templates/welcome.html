@@ -1,0 +1,34 @@
+{{define "main"}}
+<section class="hero">
+  <div class="hero-text">
+    <p class="eyebrow">A village market on NEAR</p>
+    <h1>Welcome to the haat.</h1>
+    <p class="lead">Gather mangoes, rice, fish and chillies. Trade them with four shopkeepers who each keep their own books and think for themselves. Ride out the monsoon, make pickle for Diwali, and rescue a shop that goes broke.</p>
+    <form method="post" action="/start" class="hero-form">
+      <button class="btn btn-primary btn-big" type="submit">Enter the haat</button>
+      <span class="hint">No sign-up, no wallet. You start with 400 kauri.</span>
+    </form>
+  </div>
+  <div class="hero-stalls" aria-hidden="true">
+    {{range .Stalls}}{{end}}
+    <div class="mini-stall mini-ramu"><span>👴🏽</span><b>Ramu Kaka</b><small>cautious</small></div>
+    <div class="mini-stall mini-meena"><span>👩🏽</span><b>Meena Didi</b><small>bold</small></div>
+    <div class="mini-stall mini-bashir"><span>🧔🏽</span><b>Bashir Bhai</b><small>reads the panchang</small></div>
+    <div class="mini-stall mini-lakshmi"><span>👵🏽</span><b>Lakshmi Amma</b><small>craftswoman</small></div>
+  </div>
+</section>
+
+<section class="how">
+  <div class="how-card"><span>🌳</span><h3>Gather</h3><p>Each trip to the grove, field, river or garden fills your basket. What grows depends on the season.</p></div>
+  <div class="how-card"><span>⚖️</span><h3>Trade</h3><p>Every price moves with the shop's stock and recent demand. Hover a price and the shopkeeper tells you why.</p></div>
+  <div class="how-card"><span>⛈️</span><h3>Survive the rains</h3><p>Floods cut the road to the city. Careful shopkeepers read the panchang. Bold ones go broke.</p></div>
+  <div class="how-card"><span>🤝</span><h3>Invest</h3><p>Put kauri into a closed shop to reopen it, and collect a share of its profits every day it does well.</p></div>
+</section>
+
+<section class="board board-wide">
+  <h2>Village chronicle</h2>
+  <ul class="chron">
+    {{range .Chronicle}}<li class="{{if .Important}}imp{{end}}"><span class="chron-e">{{.Emoji}}</span><span class="chron-d">Day {{.Day}}</span> {{.Text}}</li>{{end}}
+  </ul>
+</section>
+{{end}}

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<meta name="description" content="Haat is a village market game where every shopkeeper is an agent with its own wallet.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/haat.css?v=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐚</text></svg>">
+</head>
+<body class="page-{{.Page}}{{if .World.Flood}} is-flood{{end}} season-{{.World.Season}}">
+<a id="top"></a>
+<header class="topbar">
+  <a class="brand" href="/"><span class="brand-shell" aria-hidden="true">🐚</span><span class="brand-word">Haat</span></a>
+  <div class="daychip" title="Game day {{.World.Day}}">
+    <span class="daychip-day">Day {{.World.Day}}</span>
+    <span class="daychip-season">{{.Weather}} {{.Season}}</span>
+    {{if .World.Flood}}<span class="pill pill-danger">Road flooded</span>{{else}}<span class="pill">Road open</span>{{end}}
+    {{if .Awake}}<span class="daychip-next">Next day in {{.NextDay}}</span>{{end}}
+  </div>
+  <nav class="nav">
+    <a href="/" {{if eq .Page "village"}}aria-current="page"{{end}}>Village</a>
+    <a href="/market" {{if eq .Page "market"}}aria-current="page"{{end}}>Market</a>
+    {{if .Player}}<a href="/ledger" {{if eq .Page "ledger"}}aria-current="page"{{end}}>Your ledger</a>{{end}}
+  </nav>
+  {{if and .Player (ne .Page "market")}}
+  <div class="purse" aria-label="Your purse">
+    <span class="purse-name">{{.Player.Name}}</span>
+    <span class="purse-kauri"><span aria-hidden="true">🐚</span> {{num .Player.Purse}}</span>
+    <span class="energy" title="Energy: {{.Player.Energy}} of 10 trips left today">
+      {{range .Player.EnergyPips}}<i class="{{if .}}on{{end}}"></i>{{end}}
+    </span>
+  </div>
+  {{end}}
+</header>
+
+{{with .Flash}}<div class="toast toast-{{.Kind}}" role="status">{{.Text}}</div>{{end}}
+
+<main class="main">
+{{template "main" .}}
+</main>
+
+<footer class="footer">
+  <p>Every item, kauri and share is a NEP-245 token on NEAR {{.Network}}, in the
+  <a href="{{acct .Contract}}" rel="noopener" target="_blank">market contract</a>.
+  Shopkeepers sign their own decisions from their own accounts. Gas is paid by the village, so you never see it.</p>
+</footer>
+
+<div class="busy" aria-hidden="true"><div class="busy-card"><span class="busy-shell">🐚</span><span>Writing it in the village ledger…</span></div></div>
+<script>
+document.addEventListener("submit",function(e){var f=e.target;if(f.dataset.busy)return;f.dataset.busy=1;document.body.classList.add("is-busy");});
+</script>
+</body>
+</html>

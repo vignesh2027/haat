@@ -18,6 +18,9 @@ Usage:
   haat [-env FILE] bootstrap   create accounts, deploy the market, open the shops
   haat [-env FILE] smoke       create a player and make one real trade end to end
   haat [-env FILE] status      print the world, the shops and account balances
+  haat [-env FILE] serve       run the web game, the day clock and the shopkeeper agents
+  haat [-env FILE] review      let every shopkeeper review its shop once
+  haat [-env FILE] end-day     settle every shop and move to the next day
 
 Settings come from the environment and the -env file (default .env).
 `
@@ -44,6 +47,12 @@ func main() {
 		err = app.smoke(ctx)
 	case "status":
 		err = app.status(ctx)
+	case "serve":
+		err = app.serve(ctx)
+	case "review":
+		err = app.tick(ctx, false)
+	case "end-day":
+		err = app.tick(ctx, true)
 	default:
 		err = fmt.Errorf("unknown command %q", cmd)
 	}

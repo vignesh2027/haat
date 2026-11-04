@@ -1,0 +1,53 @@
+{{define "main"}}
+<div class="narrow">
+  <section class="card">
+    <p class="eyebrow">Your ledger</p>
+    <h1>{{.Player.Name}}'s account</h1>
+    <p class="lead">You have been playing on a real NEAR {{.Network}} account. Everything in your basket and purse lives there, as tokens in the market contract.</p>
+    <dl class="facts">
+      <dt>Account</dt><dd><code>{{.Player.Account}}</code> <a href="{{acct .Player.Account}}" target="_blank" rel="noopener">view on the explorer</a></dd>
+      <dt>Purse</dt><dd>🐚 {{num .Player.Purse}} kauri</dd>
+      <dt>Market contract</dt><dd><code>{{.Contract}}</code></dd>
+    </dl>
+  </section>
+
+  {{with .Reveal}}
+  <section class="card reveal">
+    <h2>Your recovery key</h2>
+    <p><b>This is shown once.</b> The game has now removed it from your browser pass and keeps no copy anywhere. Save it now. Anyone holding it controls your account.</p>
+    <pre class="secret">{{.Secret}}</pre>
+    <p>Public key: <code>{{.Public}}</code></p>
+    <p><a class="btn btn-primary" download="{{.FileName}}" href="{{.DataURL}}">Download as a near-cli credentials file</a></p>
+    <p class="muted">Put the file in <code>~/.near-credentials/{{$.Network}}/</code> to use the account with near-cli or import the key into any NEAR wallet.</p>
+  </section>
+  {{end}}
+
+  <section class="card">
+    <h2>How the game hides the chain</h2>
+    <ol class="plain">
+      <li>When you entered, the game created your account and gave it two keys. The <b>play key</b> can only call the market contract. The <b>recovery key</b> has full control.</li>
+      <li>Both keys sit in your browser in a sealed pass (an encrypted, tamper-proof cookie). The server keeps no database of keys. It opens your pass only while signing your move.</li>
+      <li>Each move is a NEAR meta transaction: your play key signs it, and the village account relays it and pays the gas. That is why you never see a fee.</li>
+      <li>If you clear your cookies, the pass is gone. Take the recovery key with you first if you want to keep the account.</li>
+    </ol>
+  </section>
+
+  {{if not .Reveal}}
+  <section class="card take">
+    <h2>Take your account with you</h2>
+    {{if .Player.HasRecovery}}
+    <p>See your recovery key once and save it. After that the game forgets it, and the account is only yours.</p>
+    <form method="post" action="/ledger/reveal"><button class="btn btn-violet">Show my recovery key once</button></form>
+    {{else}}
+    <p>Your recovery key has already been shown and the game no longer has it. The account is yours alone; this browser can still play with the play key.</p>
+    {{end}}
+  </section>
+  {{end}}
+
+  <section class="card">
+    <h2>Leave the village</h2>
+    <p class="muted">Forget this browser's pass. Your account and tokens stay on chain.</p>
+    <form method="post" action="/ledger/forget"><button class="btn btn-ghost">Forget this browser</button></form>
+  </section>
+</div>
+{{end}}
