@@ -108,14 +108,28 @@ pub fn ask_one(shelf: &Shelf) -> Option<u128> {
     if shelf.stock == 0 {
         return None;
     }
-    let fair = fair_milli(shelf.city, shelf.stock - 1, shelf.levers.target, shelf.recent_buys);
-    Some((fair * (BPS + shelf.levers.margin_bps)).div_ceil(BPS * 1_000).max(1))
+    let fair = fair_milli(
+        shelf.city,
+        shelf.stock - 1,
+        shelf.levers.target,
+        shelf.recent_buys,
+    );
+    Some(
+        (fair * (BPS + shelf.levers.margin_bps))
+            .div_ceil(BPS * 1_000)
+            .max(1),
+    )
 }
 
 /// Price the shop bids for the next unit a player sells. The stock used is the
 /// stock after the purchase. Zero means the shop will not buy any more.
 pub fn bid_one(shelf: &Shelf) -> u128 {
-    let fair = fair_milli(shelf.city, shelf.stock + 1, shelf.levers.target, shelf.recent_buys);
+    let fair = fair_milli(
+        shelf.city,
+        shelf.stock + 1,
+        shelf.levers.target,
+        shelf.recent_buys,
+    );
     fair * (BPS - shelf.levers.margin_bps.min(BPS)) / (BPS * 1_000)
 }
 
@@ -163,7 +177,15 @@ mod tests {
     use super::*;
 
     fn shelf(stock: u128, target: u128) -> Shelf {
-        Shelf { city: 60, stock, recent_buys: 0, levers: Levers { target, margin_bps: 1_000 } }
+        Shelf {
+            city: 60,
+            stock,
+            recent_buys: 0,
+            levers: Levers {
+                target,
+                margin_bps: 1_000,
+            },
+        }
     }
 
     #[test]
@@ -194,7 +216,10 @@ mod tests {
         let (total, units) = quote_shop_buys(&shelf(20, 20), 10);
         assert_eq!(units.len(), 10);
         for w in units.windows(2) {
-            assert!(w[1] <= w[0], "prices must not rise while selling: {units:?}");
+            assert!(
+                w[1] <= w[0],
+                "prices must not rise while selling: {units:?}"
+            );
         }
         assert!(units[9] < units[0]);
         assert_eq!(total, units.iter().sum::<u128>());
@@ -225,7 +250,10 @@ mod tests {
         for stock in 1..200 {
             for target in [1, 5, 20, 80] {
                 let s = shelf(stock, target);
-                assert!(ask_one(&s).unwrap() > bid_one(&s), "stock {stock} target {target}");
+                assert!(
+                    ask_one(&s).unwrap() > bid_one(&s),
+                    "stock {stock} target {target}"
+                );
             }
         }
     }

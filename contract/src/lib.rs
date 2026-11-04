@@ -7,7 +7,7 @@
 
 use near_sdk::json_types::U128;
 use near_sdk::store::{IterableMap, LookupMap, Vector};
-use near_sdk::{env, near, require, AccountId, BorshStorageKey, PanicOnDefault};
+use near_sdk::{AccountId, BorshStorageKey, PanicOnDefault, env, near, require};
 
 mod events;
 mod mt;
@@ -15,7 +15,7 @@ pub mod pricing;
 pub mod world;
 
 use pricing::{Levers, Shelf};
-use world::{season_of, ENERGY_PER_DAY};
+use world::{ENERGY_PER_DAY, season_of};
 
 /// The village currency.
 pub const KAURI: &str = "kauri";
@@ -180,6 +180,38 @@ pub struct Market {
     chronicle: Vector<ChronicleEntry>,
 }
 
+/// One player move for `play`.
+#[near(serializers = [json])]
+#[serde(rename_all = "snake_case")]
+pub enum Move {
+    Gather {
+        place: String,
+    },
+    Craft {
+        recipe: String,
+        amount: U128,
+    },
+    Sell {
+        merchant_id: AccountId,
+        token_id: String,
+        amount: U128,
+        min_total: U128,
+    },
+    Buy {
+        merchant_id: AccountId,
+        token_id: String,
+        amount: U128,
+        max_total: U128,
+    },
+    Invest {
+        merchant_id: AccountId,
+        amount: U128,
+    },
+    ClaimDividends {
+        merchant_id: AccountId,
+    },
+}
+
 // ---------- JSON views ----------
 
 #[near(serializers = [json])]
@@ -299,9 +331,18 @@ impl Market {
         opening_stock: Vec<U128>,
     ) {
         self.assert_owner();
-        require!(self.merchants.get(&account_id).is_none(), "merchant already exists");
-        require!(!items.is_empty() && items.len() <= ITEMS.len(), "a shop trades 1 to 5 items");
-        require!(items.len() == opening_stock.len(), "one opening stock per item");
+        require!(
+            self.merchants.get(&account_id).is_none(),
+            "merchant already exists"
+        );
+        require!(
+            !items.is_empty() && items.len() <= ITEMS.len(),
+            "a shop trades 1 to 5 items"
+        );
+        require!(
+            items.len() == opening_stock.len(),
+            "one opening stock per item"
+        );
         for (i, t) in items.iter().enumerate() {
             require!(ITEMS.contains(&t.as_str()), format!("unknown item {t}"));
             require!(!items[..i].contains(t), "duplicate item");
@@ -310,7 +351,11 @@ impl Market {
             name,
             policies: items
                 .iter()
-                .map(|t| Policy { token_id: t.clone(), target_stock: 20, margin_bps: 1_000 })
+                .map(|t| Policy {
+                    token_id: t.clone(),
+                    target_stock: 20,
+                    margin_bps: 1_000,
+                })
                 .collect(),
             demand: vec![Demand::default(); items.len()],
             note: String::new(),
@@ -337,7 +382,13 @@ impl Market {
         if self.players.get(&account_id).is_some() {
             return false;
         }
-        self.players.insert(account_id.clone(), Player { energy_day: self.day, ..Default::default() });
+        self.players.insert(
+            account_id.clone(),
+            Player {
+                energy_day: self.day,
+                ..Default::default()
+            },
+        );
         self.player_count += 1;
         self.internal_mint(KAURI, &account_id, STARTER_PURSE, Some("starter purse"));
         true
@@ -362,7 +413,10 @@ impl Market {
         } else if was_flood && !flood {
             self.log_chronicle("road_open", None, None, None);
         }
-        events::haat("day", near_sdk::serde_json::json!({ "day": self.day, "season": season.name(), "flood": flood }));
+        events::haat(
+            "day",
+            near_sdk::serde_json::json!({ "day": self.day, "season": season.name(), "flood": flood }),
+        );
         self.day
     }
 
@@ -372,16 +426,25 @@ impl Market {
     pub fn gather(&mut self, place: String) -> U128 {
         let who = env::predecessor_account_id();
         let item = world::place_item(&place).unwrap_or_else(|| env::panic_str("unknown place"));
-        let mut p = self.players.get(&who).cloned().unwrap_or_else(|| env::panic_str("not a registered player"));
+        let mut p = self
+            .players
+            .get(&who)
+            .cloned()
+            .unwrap_or_else(|| env::panic_str("not a registered player"));
         if p.energy_day != self.day {
             p.energy_day = self.day;
             p.energy_used = 0;
         }
-        require!(p.energy_used < ENERGY_PER_DAY, "no energy left today, rest until tomorrow");
+        require!(
+            p.energy_used < ENERGY_PER_DAY,
+            "no energy left today, rest until tomorrow"
+        );
         p.energy_used += 1;
         p.actions += 1;
-        let account_hash = u64::from_le_bytes(env::sha256_array(who.as_bytes())[..8].try_into().unwrap());
-        let luck = world::mix(self.world_seed ^ account_hash ^ ((self.day as u64) << 40) ^ p.actions);
+        let account_hash =
+            u64::from_le_bytes(env::sha256_array(who.as_bytes())[..8].try_into().unwrap());
+        let luck =
+            world::mix(self.world_seed ^ account_hash ^ ((self.day as u64) << 40) ^ p.actions);
         let amount = world::gather_yield(item, season_of(self.day), luck) as u128;
         self.players.insert(who.clone(), p);
         self.internal_mint(item, &who, amount, Some(&format!("gathered at {place}")));
@@ -401,17 +464,35 @@ impl Market {
     }
 
     /// Sells items to a shop. Fails if the shop would pay less than `min_total`.
-    pub fn sell(&mut self, merchant_id: AccountId, token_id: String, amount: U128, min_total: U128) -> U128 {
+    pub fn sell(
+        &mut self,
+        merchant_id: AccountId,
+        token_id: String,
+        amount: U128,
+        min_total: U128,
+    ) -> U128 {
         let who = env::predecessor_account_id();
         require!(who != merchant_id, "a shop cannot trade with itself");
-        require!(amount.0 >= 1 && amount.0 <= MAX_TRADE, "trade 1 to 50 units at a time");
+        require!(
+            amount.0 >= 1 && amount.0 <= MAX_TRADE,
+            "trade 1 to 50 units at a time"
+        );
         let (m, idx) = self.open_shop(&merchant_id, &token_id);
         let shelf = self.shelf(&merchant_id, &m, idx);
         let (total, _) = pricing::quote_shop_buys(&shelf, amount.0);
-        require!(total > 0, format!("{} will not buy any more {token_id}", m.name));
-        require!(total >= min_total.0, format!("price moved: {} offers {total} kauri", m.name));
+        require!(
+            total > 0,
+            format!("{} will not buy any more {token_id}", m.name)
+        );
+        require!(
+            total >= min_total.0,
+            format!("price moved: {} offers {total} kauri", m.name)
+        );
         let purse = self.balance(KAURI, &merchant_id);
-        require!(purse >= total, format!("{} cannot afford that: has {purse} kauri", m.name));
+        require!(
+            purse >= total,
+            format!("{} cannot afford that: has {purse} kauri", m.name)
+        );
         self.internal_transfer(&token_id, &who, &merchant_id, amount.0, Some("sell"));
         self.internal_transfer(KAURI, &merchant_id, &who, total, Some("sell"));
         events::haat(
@@ -423,15 +504,28 @@ impl Market {
     }
 
     /// Buys items from a shop. Fails if it would cost more than `max_total`.
-    pub fn buy(&mut self, merchant_id: AccountId, token_id: String, amount: U128, max_total: U128) -> U128 {
+    pub fn buy(
+        &mut self,
+        merchant_id: AccountId,
+        token_id: String,
+        amount: U128,
+        max_total: U128,
+    ) -> U128 {
         let who = env::predecessor_account_id();
         require!(who != merchant_id, "a shop cannot trade with itself");
-        require!(amount.0 >= 1 && amount.0 <= MAX_TRADE, "trade 1 to 50 units at a time");
+        require!(
+            amount.0 >= 1 && amount.0 <= MAX_TRADE,
+            "trade 1 to 50 units at a time"
+        );
         let (mut m, idx) = self.open_shop(&merchant_id, &token_id);
         let shelf = self.shelf(&merchant_id, &m, idx);
-        let (total, _) = pricing::quote_shop_sells(&shelf, amount.0)
-            .unwrap_or_else(|| env::panic_str(&format!("{} has only {} {token_id}", m.name, shelf.stock)));
-        require!(total <= max_total.0, format!("price moved: {} asks {total} kauri", m.name));
+        let (total, _) = pricing::quote_shop_sells(&shelf, amount.0).unwrap_or_else(|| {
+            env::panic_str(&format!("{} has only {} {token_id}", m.name, shelf.stock))
+        });
+        require!(
+            total <= max_total.0,
+            format!("price moved: {} asks {total} kauri", m.name)
+        );
         self.internal_transfer(KAURI, &who, &merchant_id, total, Some("buy"));
         self.internal_transfer(&token_id, &merchant_id, &who, amount.0, Some("buy"));
         m.demand[idx].record(self.day, amount.0 as u32);
@@ -444,6 +538,40 @@ impl Market {
         U128(total)
     }
 
+    /// Runs up to 10 player moves in one call. A function-call access key may
+    /// only sign one action per transaction, so this is how a player does
+    /// several things at once. If any move fails, none of them happen.
+    pub fn play(&mut self, moves: Vec<Move>) -> Vec<U128> {
+        require!(
+            !moves.is_empty() && moves.len() <= 10,
+            "play 1 to 10 moves at a time"
+        );
+        moves
+            .into_iter()
+            .map(|mv| match mv {
+                Move::Gather { place } => self.gather(place),
+                Move::Craft { recipe, amount } => self.craft(recipe, amount),
+                Move::Sell {
+                    merchant_id,
+                    token_id,
+                    amount,
+                    min_total,
+                } => self.sell(merchant_id, token_id, amount, min_total),
+                Move::Buy {
+                    merchant_id,
+                    token_id,
+                    amount,
+                    max_total,
+                } => self.buy(merchant_id, token_id, amount, max_total),
+                Move::Invest {
+                    merchant_id,
+                    amount,
+                } => self.invest(merchant_id, amount),
+                Move::ClaimDividends { merchant_id } => self.claim_dividends(merchant_id),
+            })
+            .collect()
+    }
+
     // ---------- shopkeepers ----------
 
     /// A shopkeeper sets its target stock and margin for each item, with a note
@@ -453,8 +581,14 @@ impl Market {
         let mut m = self.merchant(&me);
         require!(note.chars().count() <= MAX_NOTE, "note is too long");
         for p in &policies {
-            require!((1..=200).contains(&p.target_stock), "target stock must be 1 to 200");
-            require!((200..=4_000).contains(&p.margin_bps), "margin must be 200 to 4000 bps");
+            require!(
+                (1..=200).contains(&p.target_stock),
+                "target stock must be 1 to 200"
+            );
+            require!(
+                (200..=4_000).contains(&p.margin_bps),
+                "margin must be 200 to 4000 bps"
+            );
             let slot = m
                 .policies
                 .iter_mut()
@@ -471,8 +605,14 @@ impl Market {
     pub fn city_sell(&mut self, token_id: String, amount: U128) -> U128 {
         let me = env::predecessor_account_id();
         self.merchant(&me);
-        require!(!world::is_flood(self.world_seed, self.day), "the road is flooded, the city cart did not come");
-        require!(amount.0 >= 1 && amount.0 <= MAX_TRADE, "trade 1 to 50 units at a time");
+        require!(
+            !world::is_flood(self.world_seed, self.day),
+            "the road is flooded, the city cart did not come"
+        );
+        require!(
+            amount.0 >= 1 && amount.0 <= MAX_TRADE,
+            "trade 1 to 50 units at a time"
+        );
         let unit = pricing::city_bid(&token_id, season_of(self.day));
         require!(pricing::base_price(&token_id).is_some(), "unknown item");
         let total = unit * amount.0;
@@ -486,8 +626,14 @@ impl Market {
     pub fn city_buy(&mut self, token_id: String, amount: U128) -> U128 {
         let me = env::predecessor_account_id();
         self.merchant(&me);
-        require!(!world::is_flood(self.world_seed, self.day), "the road is flooded, the city cart did not come");
-        require!(amount.0 >= 1 && amount.0 <= MAX_TRADE, "trade 1 to 50 units at a time");
+        require!(
+            !world::is_flood(self.world_seed, self.day),
+            "the road is flooded, the city cart did not come"
+        );
+        require!(
+            amount.0 >= 1 && amount.0 <= MAX_TRADE,
+            "trade 1 to 50 units at a time"
+        );
         require!(pricing::base_price(&token_id).is_some(), "unknown item");
         let total = pricing::city_ask(&token_id, season_of(self.day)) * amount.0;
         self.internal_burn(KAURI, &me, total, Some("city cart"));
@@ -506,7 +652,8 @@ impl Market {
         let profit = purse.saturating_sub(m.last_mark);
         let mut dividend = 0;
         if profit > 0 && m.shares_issued > 0 {
-            dividend = profit * DIVIDEND_BPS / pricing::BPS * m.shares_issued / (FOUNDER_SHARES + m.shares_issued);
+            dividend = profit * DIVIDEND_BPS / pricing::BPS * m.shares_issued
+                / (FOUNDER_SHARES + m.shares_issued);
         }
         m.last_settle_day = Some(self.day);
         m.last_mark = purse - dividend;
@@ -516,8 +663,17 @@ impl Market {
         }
         self.merchants.insert(me.clone(), m);
         if dividend > 0 {
-            self.internal_transfer(KAURI, &me, &env::current_account_id(), dividend, Some("dividend pool"));
-            events::haat("dividend", near_sdk::serde_json::json!({ "merchant": me, "day": self.day, "profit": U128(profit), "dividend": U128(dividend) }));
+            self.internal_transfer(
+                KAURI,
+                &me,
+                &env::current_account_id(),
+                dividend,
+                Some("dividend pool"),
+            );
+            events::haat(
+                "dividend",
+                near_sdk::serde_json::json!({ "merchant": me, "day": self.day, "profit": U128(profit), "dividend": U128(dividend) }),
+            );
             self.log_chronicle("dividend", Some(me.clone()), None, Some(dividend));
         }
         self.refresh_open(&me, None);
@@ -546,7 +702,12 @@ impl Market {
             "invest",
             near_sdk::serde_json::json!({ "investor": who, "merchant": merchant_id, "amount": amount, "shares": U128(shares) }),
         );
-        self.log_chronicle("invest", Some(merchant_id.clone()), Some(who.clone()), Some(amount.0));
+        self.log_chronicle(
+            "invest",
+            Some(merchant_id.clone()),
+            Some(who.clone()),
+            Some(amount.0),
+        );
         self.refresh_open(&merchant_id, Some(who));
         U128(shares)
     }
@@ -566,7 +727,13 @@ impl Market {
         let mut m = self.merchant(&merchant_id);
         m.dividend_pool = m.dividend_pool.saturating_sub(owed);
         self.merchants.insert(merchant_id.clone(), m);
-        self.internal_transfer(KAURI, &env::current_account_id(), &who, owed, Some("dividend"));
+        self.internal_transfer(
+            KAURI,
+            &env::current_account_id(),
+            &who,
+            owed,
+            Some("dividend"),
+        );
         U128(owed)
     }
 
@@ -585,23 +752,37 @@ impl Market {
                     flood: world::is_flood(self.world_seed, self.day + d),
                 })
                 .collect(),
-            city_prices: ITEMS.iter().map(|t| (t.to_string(), U128(pricing::city_price(t, season)))).collect(),
+            city_prices: ITEMS
+                .iter()
+                .map(|t| (t.to_string(), U128(pricing::city_price(t, season))))
+                .collect(),
             players: self.player_count,
             owner_id: self.owner_id.clone(),
         }
     }
 
     pub fn get_merchants(&self) -> Vec<MerchantView> {
-        self.merchants.iter().map(|(id, m)| self.merchant_view(id, m)).collect()
+        self.merchants
+            .iter()
+            .map(|(id, m)| self.merchant_view(id, m))
+            .collect()
     }
 
     pub fn get_merchant(&self, account_id: AccountId) -> Option<MerchantView> {
-        self.merchants.get(&account_id).map(|m| self.merchant_view(&account_id, m))
+        self.merchants
+            .get(&account_id)
+            .map(|m| self.merchant_view(&account_id, m))
     }
 
     /// Prices a trade without making it. `side` is "sell" (player sells to the
     /// shop) or "buy" (player buys from the shop). Includes every factor used.
-    pub fn quote(&self, merchant_id: AccountId, token_id: String, side: String, amount: U128) -> QuoteView {
+    pub fn quote(
+        &self,
+        merchant_id: AccountId,
+        token_id: String,
+        side: String,
+        amount: U128,
+    ) -> QuoteView {
         let m = self.merchant(&merchant_id);
         let idx = m
             .policies
@@ -667,12 +848,23 @@ impl Market {
                 })
             })
             .collect();
-        PlayerView { account_id, registered: p.is_some(), energy_left, balances, holdings }
+        PlayerView {
+            account_id,
+            registered: p.is_some(),
+            energy_left,
+            balances,
+            holdings,
+        }
     }
 
     /// Daily snapshots from `from_day`, at most `limit` of them.
     pub fn history(&self, from_day: u32, limit: u32) -> Vec<DaySnapshot> {
-        self.history.iter().skip(from_day as usize).take(limit.min(60) as usize).cloned().collect()
+        self.history
+            .iter()
+            .skip(from_day as usize)
+            .take(limit.min(60) as usize)
+            .cloned()
+            .collect()
     }
 
     /// The live snapshot for today, in the same shape as `history`.
@@ -681,7 +873,12 @@ impl Market {
     }
 
     pub fn chronicle(&self, from_index: u32, limit: u32) -> Vec<ChronicleEntry> {
-        self.chronicle.iter().skip(from_index as usize).take(limit.min(100) as usize).cloned().collect()
+        self.chronicle
+            .iter()
+            .skip(from_index as usize)
+            .take(limit.min(100) as usize)
+            .cloned()
+            .collect()
     }
 
     pub fn chronicle_len(&self) -> u32 {
@@ -697,16 +894,25 @@ pub fn share_token(merchant_id: &AccountId) -> String {
 
 impl Market {
     fn assert_owner(&self) {
-        require!(env::predecessor_account_id() == self.owner_id, "only the owner can do this");
+        require!(
+            env::predecessor_account_id() == self.owner_id,
+            "only the owner can do this"
+        );
     }
 
     fn merchant(&self, id: &AccountId) -> Merchant {
-        self.merchants.get(id).cloned().unwrap_or_else(|| env::panic_str("no such shop"))
+        self.merchants
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| env::panic_str("no such shop"))
     }
 
     fn open_shop(&self, id: &AccountId, token_id: &str) -> (Merchant, usize) {
         let m = self.merchant(id);
-        require!(m.open, format!("{}'s shop is closed until someone invests", m.name));
+        require!(
+            m.open,
+            format!("{}'s shop is closed until someone invests", m.name)
+        );
         let idx = m
             .policies
             .iter()
@@ -721,13 +927,19 @@ impl Market {
             city: pricing::city_price(&p.token_id, season_of(self.day)),
             stock: self.balance(&p.token_id, id),
             recent_buys: m.demand[idx].recent_on(self.day),
-            levers: Levers { target: p.target_stock as u128, margin_bps: p.margin_bps as u128 },
+            levers: Levers {
+                target: p.target_stock as u128,
+                margin_bps: p.margin_bps as u128,
+            },
         }
     }
 
     fn shop_value(&self, id: &AccountId, _m: &Merchant) -> u128 {
         let season = season_of(self.day);
-        let goods: u128 = ITEMS.iter().map(|t| self.balance(t, id) * pricing::city_price(t, season)).sum();
+        let goods: u128 = ITEMS
+            .iter()
+            .map(|t| self.balance(t, id) * pricing::city_price(t, season))
+            .sum();
         self.balance(KAURI, id) + goods
     }
 
@@ -804,19 +1016,28 @@ impl Market {
         m.open = open;
         self.merchants.insert(id.clone(), m);
         let kind = if open { "shop_reopened" } else { "shop_closed" };
-        events::haat(kind, near_sdk::serde_json::json!({ "merchant": id, "day": self.day, "kauri": U128(purse) }));
+        events::haat(
+            kind,
+            near_sdk::serde_json::json!({ "merchant": id, "day": self.day, "kauri": U128(purse) }),
+        );
         self.log_chronicle(kind, Some(id.clone()), actor, Some(purse));
     }
 
     fn pending_dividends(&self, merchant_id: &AccountId, m: &Merchant, holder: &AccountId) -> u128 {
-        let h = self.holdings.get(&(merchant_id.clone(), holder.clone())).cloned().unwrap_or_default();
+        let h = self
+            .holdings
+            .get(&(merchant_id.clone(), holder.clone()))
+            .cloned()
+            .unwrap_or_default();
         let shares = self.balance(&share_token(merchant_id), holder);
         h.owed + shares * (m.acc_per_share - h.paid_acc) / ACC_SCALE
     }
 
     /// Brings a holder's dividend checkpoint up to date. Must run before their share balance changes.
     pub(crate) fn settle_holder(&mut self, merchant_id: &AccountId, holder: &AccountId) {
-        let Some(m) = self.merchants.get(merchant_id) else { return };
+        let Some(m) = self.merchants.get(merchant_id) else {
+            return;
+        };
         let acc = m.acc_per_share;
         let key = (merchant_id.clone(), holder.clone());
         let mut h = self.holdings.get(&key).cloned().unwrap_or_default();
@@ -829,7 +1050,13 @@ impl Market {
         self.holdings.insert(key, h);
     }
 
-    fn log_chronicle(&mut self, kind: &str, merchant_id: Option<AccountId>, account_id: Option<AccountId>, amount: Option<u128>) {
+    fn log_chronicle(
+        &mut self,
+        kind: &str,
+        merchant_id: Option<AccountId>,
+        account_id: Option<AccountId>,
+        amount: Option<u128>,
+    ) {
         self.chronicle.push(ChronicleEntry {
             day: self.day,
             kind: kind.to_string(),

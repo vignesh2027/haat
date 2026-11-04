@@ -6,7 +6,7 @@
 
 use crate::*;
 use near_sdk::json_types::U128;
-use near_sdk::{assert_one_yocto, ext_contract, Gas, PromiseOrValue, PromiseResult};
+use near_sdk::{Gas, PromiseOrValue, assert_one_yocto, ext_contract};
 
 /// Token info returned by `mt_token`.
 #[near(serializers = [json])]
@@ -15,6 +15,7 @@ pub struct Token {
     pub owner_id: Option<AccountId>,
 }
 
+#[allow(dead_code)]
 #[ext_contract(ext_mt_receiver)]
 pub trait MultiTokenReceiver {
     fn mt_on_transfer(
@@ -32,7 +33,10 @@ const GAS_FOR_RECEIVER: Gas = Gas::from_tgas(30);
 
 impl Market {
     pub(crate) fn balance(&self, token_id: &str, account_id: &AccountId) -> u128 {
-        self.balances.get(&(token_id.to_string(), account_id.clone())).copied().unwrap_or(0)
+        self.balances
+            .get(&(token_id.to_string(), account_id.clone()))
+            .copied()
+            .unwrap_or(0)
     }
 
     fn set_balance(&mut self, token_id: &str, account_id: &AccountId, amount: u128) {
@@ -46,7 +50,11 @@ impl Market {
 
     fn add_supply(&mut self, token_id: &str, delta: u128, add: bool) {
         let cur = self.supply.get(token_id).copied().unwrap_or(0);
-        let next = if add { cur + delta } else { cur.checked_sub(delta).expect("supply underflow") };
+        let next = if add {
+            cur + delta
+        } else {
+            cur.checked_sub(delta).expect("supply underflow")
+        };
         self.supply.insert(token_id.to_string(), next);
     }
 
@@ -61,7 +69,13 @@ impl Market {
         }
     }
 
-    pub(crate) fn internal_mint(&mut self, token_id: &str, to: &AccountId, amount: u128, memo: Option<&str>) {
+    pub(crate) fn internal_mint(
+        &mut self,
+        token_id: &str,
+        to: &AccountId,
+        amount: u128,
+        memo: Option<&str>,
+    ) {
         if amount == 0 {
             return;
         }
@@ -72,12 +86,21 @@ impl Market {
         events::mt_mint(to, &[token_id.to_string()], &[amount], memo);
     }
 
-    pub(crate) fn internal_burn(&mut self, token_id: &str, from: &AccountId, amount: u128, memo: Option<&str>) {
+    pub(crate) fn internal_burn(
+        &mut self,
+        token_id: &str,
+        from: &AccountId,
+        amount: u128,
+        memo: Option<&str>,
+    ) {
         if amount == 0 {
             return;
         }
         let bal = self.balance(token_id, from);
-        require!(bal >= amount, format!("not enough {token_id}: have {bal}, need {amount}"));
+        require!(
+            bal >= amount,
+            format!("not enough {token_id}: have {bal}, need {amount}")
+        );
         self.before_share_change(token_id, from);
         self.set_balance(token_id, from, bal - amount);
         self.add_supply(token_id, amount, false);
@@ -89,7 +112,10 @@ impl Market {
         require!(amount > 0, "amount must be positive");
         require!(from != to, "sender and receiver must differ");
         let bal = self.balance(token_id, from);
-        require!(bal >= amount, format!("not enough {token_id}: have {bal}, need {amount}"));
+        require!(
+            bal >= amount,
+            format!("not enough {token_id}: have {bal}, need {amount}")
+        );
         self.before_share_change(token_id, from);
         self.before_share_change(token_id, to);
         self.set_balance(token_id, from, bal - amount);
@@ -119,7 +145,10 @@ impl Market {
         memo: Option<&str>,
     ) {
         require!(!token_ids.is_empty(), "no tokens given");
-        require!(token_ids.len() == amounts.len(), "token_ids and amounts must have the same length");
+        require!(
+            token_ids.len() == amounts.len(),
+            "token_ids and amounts must have the same length"
+        );
         if let Some(a) = approvals {
             require!(a.iter().all(Option::is_none), "approvals are not supported");
         }
@@ -147,7 +176,14 @@ impl Market {
     ) {
         assert_one_yocto();
         let sender = env::predecessor_account_id();
-        self.internal_batch_transfer(&sender, &receiver_id, &[token_id], &[amount], Some(vec![approval]), memo.as_deref());
+        self.internal_batch_transfer(
+            &sender,
+            &receiver_id,
+            &[token_id],
+            &[amount],
+            Some(vec![approval]),
+            memo.as_deref(),
+        );
     }
 
     #[payable]
@@ -161,7 +197,14 @@ impl Market {
     ) {
         assert_one_yocto();
         let sender = env::predecessor_account_id();
-        self.internal_batch_transfer(&sender, &receiver_id, &token_ids, &amounts, approvals, memo.as_deref());
+        self.internal_batch_transfer(
+            &sender,
+            &receiver_id,
+            &token_ids,
+            &amounts,
+            approvals,
+            memo.as_deref(),
+        );
     }
 
     #[payable]
@@ -174,7 +217,14 @@ impl Market {
         memo: Option<String>,
         msg: String,
     ) -> PromiseOrValue<Vec<U128>> {
-        self.mt_batch_transfer_call(receiver_id, vec![token_id], vec![amount], Some(vec![approval]), memo, msg)
+        self.mt_batch_transfer_call(
+            receiver_id,
+            vec![token_id],
+            vec![amount],
+            Some(vec![approval]),
+            memo,
+            msg,
+        )
     }
 
     #[payable]
@@ -189,14 +239,30 @@ impl Market {
     ) -> PromiseOrValue<Vec<U128>> {
         assert_one_yocto();
         require!(
-            env::prepaid_gas() >= GAS_FOR_RECEIVER.saturating_add(GAS_FOR_RESOLVE).saturating_add(Gas::from_tgas(10)),
+            env::prepaid_gas()
+                >= GAS_FOR_RECEIVER
+                    .saturating_add(GAS_FOR_RESOLVE)
+                    .saturating_add(Gas::from_tgas(10)),
             "attach at least 50 TGas"
         );
         let sender = env::predecessor_account_id();
-        self.internal_batch_transfer(&sender, &receiver_id, &token_ids, &amounts, approvals, memo.as_deref());
+        self.internal_batch_transfer(
+            &sender,
+            &receiver_id,
+            &token_ids,
+            &amounts,
+            approvals,
+            memo.as_deref(),
+        );
         ext_mt_receiver::ext(receiver_id.clone())
             .with_static_gas(GAS_FOR_RECEIVER)
-            .mt_on_transfer(sender.clone(), vec![sender.clone(); token_ids.len()], token_ids.clone(), amounts.clone(), msg)
+            .mt_on_transfer(
+                sender.clone(),
+                vec![sender.clone(); token_ids.len()],
+                token_ids.clone(),
+                amounts.clone(),
+                msg,
+            )
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(GAS_FOR_RESOLVE)
@@ -214,8 +280,8 @@ impl Market {
         token_ids: Vec<String>,
         amounts: Vec<U128>,
     ) -> Vec<U128> {
-        let unused: Vec<u128> = match env::promise_result(0) {
-            PromiseResult::Successful(bytes) => near_sdk::serde_json::from_slice::<Vec<U128>>(&bytes)
+        let unused: Vec<u128> = match env::promise_result_checked(0, 16 * 1024) {
+            Ok(bytes) => near_sdk::serde_json::from_slice::<Vec<U128>>(&bytes)
                 .ok()
                 .filter(|v| v.len() == amounts.len())
                 .map(|v| v.iter().zip(&amounts).map(|(u, a)| u.0.min(a.0)).collect())
@@ -238,7 +304,10 @@ impl Market {
     }
 
     pub fn mt_batch_balance_of(&self, account_id: AccountId, token_ids: Vec<String>) -> Vec<U128> {
-        token_ids.iter().map(|t| U128(self.balance(t, &account_id))).collect()
+        token_ids
+            .iter()
+            .map(|t| U128(self.balance(t, &account_id)))
+            .collect()
     }
 
     pub fn mt_supply(&self, token_id: String) -> Option<U128> {
@@ -246,13 +315,21 @@ impl Market {
     }
 
     pub fn mt_batch_supply(&self, token_ids: Vec<String>) -> Vec<Option<U128>> {
-        token_ids.iter().map(|t| self.supply.get(t).map(|s| U128(*s))).collect()
+        token_ids
+            .iter()
+            .map(|t| self.supply.get(t).map(|s| U128(*s)))
+            .collect()
     }
 
     pub fn mt_token(&self, token_ids: Vec<String>) -> Vec<Option<Token>> {
         token_ids
             .into_iter()
-            .map(|t| self.supply.get(&t).map(|_| Token { token_id: t.clone(), owner_id: None }))
+            .map(|t| {
+                self.supply.get(&t).map(|_| Token {
+                    token_id: t.clone(),
+                    owner_id: None,
+                })
+            })
             .collect()
     }
 }

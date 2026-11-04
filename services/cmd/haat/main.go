@@ -1,0 +1,58 @@
+// Command haat runs the Haat village market: bootstrap the accounts and
+// contract, run the web game and the shopkeeper agents, or run a smoke test.
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+)
+
+const usage = `haat: a village market with shopkeeper agents on NEAR
+
+Usage:
+  haat [-env FILE] bootstrap   create accounts, deploy the market, open the shops
+  haat [-env FILE] smoke       create a player and make one real trade end to end
+  haat [-env FILE] status      print the world, the shops and account balances
+
+Settings come from the environment and the -env file (default .env).
+`
+
+func main() {
+	envPath := flag.String("env", ".env", "settings file (gitignored)")
+	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
+	flag.Parse()
+	if flag.NArg() < 1 {
+		flag.Usage()
+		os.Exit(2)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	app, err := loadApp(*envPath)
+	if err != nil {
+		fail(err)
+	}
+	switch cmd := flag.Arg(0); cmd {
+	case "bootstrap":
+		err = app.bootstrap(ctx)
+	case "smoke":
+		err = app.smoke(ctx)
+	case "status":
+		err = app.status(ctx)
+	default:
+		err = fmt.Errorf("unknown command %q", cmd)
+	}
+	if err != nil {
+		fail(err)
+	}
+}
+
+func fail(err error) {
+	fmt.Fprintln(os.Stderr, "error:", strings.TrimSpace(err.Error()))
+	os.Exit(1)
+}

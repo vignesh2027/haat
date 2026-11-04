@@ -1,8 +1,8 @@
 //! NEP-297 event logs: the standard NEP-245 events and the game's own events.
 
 use near_sdk::serde::Serialize;
-use near_sdk::serde_json::{json, Value};
-use near_sdk::{env, AccountId};
+use near_sdk::serde_json::{Value, json};
+use near_sdk::{AccountId, env};
 
 fn emit(standard: &str, event: &str, data: Value) {
     let body = json!({
@@ -19,7 +19,8 @@ fn strings(amounts: &[u128]) -> Vec<String> {
 }
 
 pub fn mt_mint(owner_id: &AccountId, token_ids: &[String], amounts: &[u128], memo: Option<&str>) {
-    let mut log = json!({ "owner_id": owner_id, "token_ids": token_ids, "amounts": strings(amounts) });
+    let mut log =
+        json!({ "owner_id": owner_id, "token_ids": token_ids, "amounts": strings(amounts) });
     if let Some(m) = memo {
         log["memo"] = json!(m);
     }
@@ -27,7 +28,8 @@ pub fn mt_mint(owner_id: &AccountId, token_ids: &[String], amounts: &[u128], mem
 }
 
 pub fn mt_burn(owner_id: &AccountId, token_ids: &[String], amounts: &[u128], memo: Option<&str>) {
-    let mut log = json!({ "owner_id": owner_id, "token_ids": token_ids, "amounts": strings(amounts) });
+    let mut log =
+        json!({ "owner_id": owner_id, "token_ids": token_ids, "amounts": strings(amounts) });
     if let Some(m) = memo {
         log["memo"] = json!(m);
     }

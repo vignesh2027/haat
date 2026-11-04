@@ -63,7 +63,10 @@ pub const PLACES: [(&str, &str); 4] = [
 
 /// Item a place gives, if the place exists.
 pub fn place_item(place: &str) -> Option<&'static str> {
-    PLACES.iter().find(|(p, _)| *p == place).map(|(_, item)| *item)
+    PLACES
+        .iter()
+        .find(|(p, _)| *p == place)
+        .map(|(_, item)| *item)
 }
 
 /// Base yield for one gathering action, by season.
@@ -87,7 +90,11 @@ pub fn base_yield(item: &str, season: Season) -> u32 {
 /// time, but never in a season when the place gives nothing.
 pub fn gather_yield(item: &str, season: Season, luck: u64) -> u32 {
     let base = base_yield(item, season);
-    if base == 0 { 0 } else { base + (luck % 2) as u32 }
+    if base == 0 {
+        0
+    } else {
+        base + (luck % 2) as u32
+    }
 }
 
 #[cfg(test)]
@@ -114,7 +121,10 @@ mod tests {
         let monsoon_floods = (7..14).filter(|d| is_flood(seed, *d)).count()
             + (28..35).filter(|d| is_flood(seed, *d)).count()
             + (49..56).filter(|d| is_flood(seed, *d)).count();
-        assert!(monsoon_floods > 0 && monsoon_floods < 21, "got {monsoon_floods}");
+        assert!(
+            monsoon_floods > 0 && monsoon_floods < 21,
+            "got {monsoon_floods}"
+        );
     }
 
     #[test]

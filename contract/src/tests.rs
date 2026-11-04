@@ -1,24 +1,28 @@
 use super::*;
-use near_sdk::test_utils::{get_logs, VMContextBuilder};
-use near_sdk::{testing_env, NearToken};
+use near_sdk::test_utils::{VMContextBuilder, get_logs};
+use near_sdk::{NearToken, testing_env};
 
 fn acc(s: &str) -> AccountId {
     s.parse().unwrap()
 }
 
 fn as_caller(who: &str) {
-    testing_env!(VMContextBuilder::new()
-        .current_account_id(acc("market.test"))
-        .predecessor_account_id(acc(who))
-        .build());
+    testing_env!(
+        VMContextBuilder::new()
+            .current_account_id(acc("market.test"))
+            .predecessor_account_id(acc(who))
+            .build()
+    );
 }
 
 fn as_caller_with_yocto(who: &str) {
-    testing_env!(VMContextBuilder::new()
-        .current_account_id(acc("market.test"))
-        .predecessor_account_id(acc(who))
-        .attached_deposit(NearToken::from_yoctonear(1))
-        .build());
+    testing_env!(
+        VMContextBuilder::new()
+            .current_account_id(acc("market.test"))
+            .predecessor_account_id(acc(who))
+            .attached_deposit(NearToken::from_yoctonear(1))
+            .build()
+    );
 }
 
 /// A market with one shop (meena: chilli and pickle) and one player (kavya).
@@ -72,9 +76,15 @@ fn gathering_uses_energy_and_follows_season() {
     as_caller("kavya.test");
     let got = m.gather("grove".into()).0;
     assert!(got == 3 || got == 4, "summer mango yield was {got}");
-    assert_eq!(m.get_player(acc("kavya.test")).energy_left, ENERGY_PER_DAY - 1);
+    assert_eq!(
+        m.get_player(acc("kavya.test")).energy_left,
+        ENERGY_PER_DAY - 1
+    );
     let logs = get_logs();
-    assert!(logs.iter().any(|l| l.contains("\"standard\":\"nep245\"") && l.contains("mt_mint")));
+    assert!(
+        logs.iter()
+            .any(|l| l.contains("\"standard\":\"nep245\"") && l.contains("mt_mint"))
+    );
 }
 
 #[test]
@@ -98,7 +108,10 @@ fn energy_refills_next_day() {
     m.advance_day();
     as_caller("kavya.test");
     m.gather("river".into());
-    assert_eq!(m.get_player(acc("kavya.test")).energy_left, ENERGY_PER_DAY - 1);
+    assert_eq!(
+        m.get_player(acc("kavya.test")).energy_left,
+        ENERGY_PER_DAY - 1
+    );
 }
 
 #[test]
@@ -133,7 +146,9 @@ fn selling_moves_goods_and_pays_the_quote() {
     let q = m.quote(acc("meena.test"), "chilli".into(), "sell".into(), U128(4));
     let before = bal(&m, KAURI, "kavya.test");
     as_caller("kavya.test");
-    let paid = m.sell(acc("meena.test"), "chilli".into(), U128(4), U128(0)).0;
+    let paid = m
+        .sell(acc("meena.test"), "chilli".into(), U128(4), U128(0))
+        .0;
     assert_eq!(Some(U128(paid)), q.total);
     assert_eq!(bal(&m, KAURI, "kavya.test"), before + paid);
     assert_eq!(bal(&m, "chilli", "meena.test"), 14);
@@ -147,7 +162,10 @@ fn flooding_a_stall_lowers_its_price() {
     as_caller("kavya.test");
     m.sell(acc("meena.test"), "chilli".into(), U128(12), U128(0));
     let after = m.get_merchant(acc("meena.test")).unwrap().shelves[0].bid.0;
-    assert!(after < first, "bid should fall after flooding: {first} then {after}");
+    assert!(
+        after < first,
+        "bid should fall after flooding: {first} then {after}"
+    );
 }
 
 #[test]
@@ -162,7 +180,10 @@ fn sell_respects_min_total() {
 #[test]
 fn buying_raises_demand_and_price() {
     let mut m = setup();
-    let ask_before = m.get_merchant(acc("meena.test")).unwrap().shelves[0].ask.unwrap().0;
+    let ask_before = m.get_merchant(acc("meena.test")).unwrap().shelves[0]
+        .ask
+        .unwrap()
+        .0;
     as_caller("kavya.test");
     m.buy(acc("meena.test"), "chilli".into(), U128(3), U128(10_000));
     let shelf = &m.get_merchant(acc("meena.test")).unwrap().shelves[0];
@@ -178,9 +199,19 @@ fn demand_fades_by_half_each_day() {
     m.buy(acc("meena.test"), "chilli".into(), U128(2), U128(10_000));
     as_caller("owner.test");
     m.advance_day();
-    assert_eq!(m.get_merchant(acc("meena.test")).unwrap().shelves[0].recent_demand.0, 2);
+    assert_eq!(
+        m.get_merchant(acc("meena.test")).unwrap().shelves[0]
+            .recent_demand
+            .0,
+        2
+    );
     m.advance_day();
-    assert_eq!(m.get_merchant(acc("meena.test")).unwrap().shelves[0].recent_demand.0, 1);
+    assert_eq!(
+        m.get_merchant(acc("meena.test")).unwrap().shelves[0]
+            .recent_demand
+            .0,
+        1
+    );
 }
 
 #[test]
@@ -196,7 +227,11 @@ fn shopkeeper_sets_own_policy_and_note() {
     let mut m = setup();
     as_caller("meena.test");
     m.set_policies(
-        vec![Policy { token_id: "chilli".into(), target_stock: 60, margin_bps: 600 }],
+        vec![Policy {
+            token_id: "chilli".into(),
+            target_stock: 60,
+            margin_bps: 600,
+        }],
         "Chillies sell fast before the rains".into(),
     );
     let v = m.get_merchant(acc("meena.test")).unwrap();
@@ -217,7 +252,14 @@ fn players_cannot_set_shop_policy() {
 fn policy_bounds_are_enforced() {
     let mut m = setup();
     as_caller("meena.test");
-    m.set_policies(vec![Policy { token_id: "chilli".into(), target_stock: 10, margin_bps: 9_000 }], "".into());
+    m.set_policies(
+        vec![Policy {
+            token_id: "chilli".into(),
+            target_stock: 10,
+            margin_bps: 9_000,
+        }],
+        "".into(),
+    );
 }
 
 #[test]
@@ -271,7 +313,10 @@ fn a_broke_shop_closes_and_investment_reopens_it() {
     assert!(shares > 0);
     let v = m.get_merchant(acc("meena.test")).unwrap();
     assert!(v.open);
-    assert_eq!(bal(&m, &share_token(&acc("meena.test")), "kavya.test"), shares);
+    assert_eq!(
+        bal(&m, &share_token(&acc("meena.test")), "kavya.test"),
+        shares
+    );
     let last = m.chronicle(0, 100).pop().unwrap();
     assert_eq!(last.kind, "shop_reopened");
     assert_eq!(last.account_id, Some(acc("kavya.test")));
@@ -297,7 +342,10 @@ fn cheap_shops_sell_bigger_stakes() {
     bankrupt_meena(&mut broke);
     as_caller("kavya.test");
     let broke_shares = broke.invest(acc("meena.test"), U128(100)).0;
-    assert!(broke_shares > rich_shares, "{broke_shares} should beat {rich_shares}");
+    assert!(
+        broke_shares > rich_shares,
+        "{broke_shares} should beat {rich_shares}"
+    );
 }
 
 #[test]
@@ -349,11 +397,19 @@ fn transferred_shares_keep_earned_dividends_with_the_seller() {
     as_caller("meena.test");
     m.city_sell("chilli".into(), U128(10));
     m.settle_day();
-    let earned = m.get_player(acc("kavya.test")).holdings[0].pending_dividends.0;
+    let earned = m.get_player(acc("kavya.test")).holdings[0]
+        .pending_dividends
+        .0;
     assert!(earned > 0);
 
     as_caller_with_yocto("kavya.test");
-    m.mt_transfer(acc("arjun.test"), share_token(&acc("meena.test")), U128(shares), None, None);
+    m.mt_transfer(
+        acc("arjun.test"),
+        share_token(&acc("meena.test")),
+        U128(shares),
+        None,
+        None,
+    );
     let k = m.get_player(acc("kavya.test"));
     assert_eq!(k.holdings[0].pending_dividends.0, earned);
     assert_eq!(k.holdings[0].shares.0, 0);
@@ -366,9 +422,18 @@ fn transferred_shares_keep_earned_dividends_with_the_seller() {
 fn mt_transfer_moves_tokens_and_logs_nep245() {
     let mut m = setup();
     as_caller_with_yocto("kavya.test");
-    m.mt_transfer(acc("friend.test"), KAURI.into(), U128(15), None, Some("gift".into()));
+    m.mt_transfer(
+        acc("friend.test"),
+        KAURI.into(),
+        U128(15),
+        None,
+        Some("gift".into()),
+    );
     assert_eq!(bal(&m, KAURI, "friend.test"), 15);
-    let log = get_logs().into_iter().find(|l| l.contains("mt_transfer")).unwrap();
+    let log = get_logs()
+        .into_iter()
+        .find(|l| l.contains("mt_transfer"))
+        .unwrap();
     assert!(log.starts_with("EVENT_JSON:"));
     assert!(log.contains("\"old_owner_id\":\"kavya.test\""));
     assert!(log.contains("\"amounts\":[\"15\"]"));
@@ -387,7 +452,13 @@ fn mt_transfer_needs_one_yocto() {
 fn batch_rejects_duplicates() {
     let mut m = setup();
     as_caller_with_yocto("kavya.test");
-    m.mt_batch_transfer(acc("friend.test"), vec![KAURI.into(), KAURI.into()], vec![U128(1), U128(1)], None, None);
+    m.mt_batch_transfer(
+        acc("friend.test"),
+        vec![KAURI.into(), KAURI.into()],
+        vec![U128(1), U128(1)],
+        None,
+        None,
+    );
 }
 
 #[test]
@@ -417,4 +488,39 @@ fn advance_day_writes_history_and_chronicle() {
     assert!(kinds.contains(&"season_barsaat".to_string()));
     assert_eq!(m.get_world().season, "barsaat");
     assert_eq!(m.get_world().forecast.len(), 3);
+}
+
+#[test]
+fn play_runs_several_moves_in_one_call() {
+    let mut m = setup();
+    as_caller("kavya.test");
+    let out = m.play(vec![
+        Move::Gather {
+            place: "garden".into(),
+        },
+        Move::Gather {
+            place: "garden".into(),
+        },
+        Move::Sell {
+            merchant_id: acc("meena.test"),
+            token_id: "chilli".into(),
+            amount: U128(2),
+            min_total: U128(1),
+        },
+    ]);
+    assert_eq!(out.len(), 3);
+    assert!(out[2].0 > 0);
+    assert_eq!(
+        m.get_player(acc("kavya.test")).energy_left,
+        ENERGY_PER_DAY - 2
+    );
+}
+
+#[test]
+fn play_moves_parse_from_json() {
+    let moves: Vec<Move> = near_sdk::serde_json::from_str(
+        r#"[{"gather":{"place":"grove"}},{"sell":{"merchant_id":"meena.test","token_id":"chilli","amount":"1","min_total":"0"}}]"#,
+    )
+    .unwrap();
+    assert_eq!(moves.len(), 2);
 }
