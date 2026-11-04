@@ -65,7 +65,7 @@ func ExplainBid(name string, sh market.Shelf, city int64) Explanation {
 	default:
 		e.Headline = fmt.Sprintf("My stock is just right, so I pay close to the city price: %d.", sh.Bid)
 	}
-	e.Lines = factorLines(sh, city)
+	e.Lines = factorLines(sh, city, false)
 	e.Lines = append(e.Lines, fmt.Sprintf("Margin %s: pays %d for the next one.", pct(sh.MarginBps), sh.Bid))
 	return e
 }
@@ -76,7 +76,7 @@ func ExplainAsk(name string, sh market.Shelf, city int64) Explanation {
 	e := Explanation{}
 	if sh.Ask == nil {
 		e.Headline = fmt.Sprintf("Sold out of %s. Come back after someone brings some.", Plural(sh.TokenID, 2))
-		e.Lines = factorLines(sh, city)
+		e.Lines = factorLines(sh, city, true)
 		return e
 	}
 	switch {
@@ -87,18 +87,20 @@ func ExplainAsk(name string, sh market.Shelf, city int64) Explanation {
 	default:
 		e.Headline = fmt.Sprintf("Plenty on the shelf. %d each.", *sh.Ask)
 	}
-	e.Lines = factorLines(sh, city)
+	e.Lines = factorLines(sh, city, true)
 	e.Lines = append(e.Lines, fmt.Sprintf("Margin %s: asks %d for the next one.", pct(sh.MarginBps), *sh.Ask))
 	return e
 }
 
-func factorLines(sh market.Shelf, city int64) []string {
+// factorLines lists the pricing factors. Demand only raises asking prices,
+// never what a shop pays, so bids leave it out.
+func factorLines(sh market.Shelf, city int64, withDemand bool) []string {
 	stock := int64(sh.Stock)
 	lines := []string{
 		fmt.Sprintf("City price today: %d kauri.", city),
 		fmt.Sprintf("Stock %d, wants %d: price times %.2f.", stock, sh.TargetStock, StockFactor(stock, sh.TargetStock)),
 	}
-	if r := int64(sh.RecentDemand); r > 0 {
+	if r := int64(sh.RecentDemand); r > 0 && withDemand {
 		lines = append(lines, fmt.Sprintf("Bought by players lately: %d, price times %.2f.", r, DemandFactor(r)))
 	}
 	return lines

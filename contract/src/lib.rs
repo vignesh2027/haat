@@ -6,8 +6,8 @@
 //! settlements from their own accounts. All pricing is in `pricing.rs`.
 
 use near_sdk::json_types::U128;
-use near_sdk::store::{IterableMap, LookupMap, Vector};
-use near_sdk::{AccountId, BorshStorageKey, PanicOnDefault, env, near, require};
+use near_sdk::store::{IterableMap, LookupMap, LookupSet, Vector};
+use near_sdk::{AccountId, BorshStorageKey, NearToken, PanicOnDefault, env, near, require};
 
 mod events;
 mod mt;
@@ -41,6 +41,14 @@ pub const MAX_TRADE: u128 = 50;
 pub const MIN_INVEST: u128 = 10;
 /// Longest note a shopkeeper can post.
 pub const MAX_NOTE: usize = 200;
+/// Days of price history kept on chain. Older days are deleted.
+pub const HISTORY_DAYS: u32 = 60;
+/// Chronicle entries kept on chain. Older entries are deleted.
+pub const CHRONICLE_KEEP: u32 = 400;
+/// Investments smaller than this are not written to the chronicle.
+pub const CHRONICLE_MIN_INVEST: u128 = 100;
+/// NEAR an outside account deposits once to receive tokens by standard transfer.
+pub const STORAGE_DEPOSIT: NearToken = NearToken::from_millinear(10);
 
 #[derive(BorshStorageKey)]
 #[near]
@@ -52,6 +60,8 @@ enum StorageKey {
     Holdings,
     History,
     Chronicle,
+    PlayerIds,
+    Known,
 }
 
 /// One shopkeeper lever setting for one item.
@@ -117,6 +127,7 @@ pub struct Player {
     energy_day: u32,
     energy_used: u32,
     actions: u64,
+    rescues: u32,
 }
 
 #[near(serializers = [borsh])]
@@ -176,8 +187,23 @@ pub struct Market {
     players: LookupMap<AccountId, Player>,
     player_count: u32,
     holdings: LookupMap<(AccountId, AccountId), Holding>,
-    history: Vector<DaySnapshot>,
-    chronicle: Vector<ChronicleEntry>,
+    /// Day snapshots by day number; only the last HISTORY_DAYS are kept.
+    history: LookupMap<u32, DaySnapshot>,
+    /// Chronicle entries by index; only the last CHRONICLE_KEEP are kept.
+    chronicle: LookupMap<u32, ChronicleEntry>,
+    chronicle_len: u32,
+    player_ids: Vector<AccountId>,
+    /// Outside accounts that paid a storage deposit to receive tokens.
+    known: LookupSet<AccountId>,
+}
+
+/// A player's standing in the village.
+#[near(serializers = [json])]
+pub struct LeaderRow {
+    pub account_id: AccountId,
+    pub kauri: U128,
+    pub net_worth: U128,
+    pub rescues: u32,
 }
 
 /// One player move for `play`.
@@ -309,8 +335,11 @@ impl Market {
             players: LookupMap::new(StorageKey::Players),
             player_count: 0,
             holdings: LookupMap::new(StorageKey::Holdings),
-            history: Vector::new(StorageKey::History),
-            chronicle: Vector::new(StorageKey::Chronicle),
+            history: LookupMap::new(StorageKey::History),
+            chronicle: LookupMap::new(StorageKey::Chronicle),
+            chronicle_len: 0,
+            player_ids: Vector::new(StorageKey::PlayerIds),
+            known: LookupSet::new(StorageKey::Known),
         };
         for t in std::iter::once(KAURI).chain(ITEMS) {
             m.supply.insert(t.to_string(), 0);
@@ -390,6 +419,7 @@ impl Market {
             },
         );
         self.player_count += 1;
+        self.player_ids.push(account_id.clone());
         self.internal_mint(KAURI, &account_id, STARTER_PURSE, Some("starter purse"));
         true
     }
@@ -398,7 +428,10 @@ impl Market {
     pub fn advance_day(&mut self) -> u32 {
         self.assert_owner();
         let snapshot = self.snapshot();
-        self.history.push(snapshot);
+        self.history.insert(self.day, snapshot);
+        if self.day >= HISTORY_DAYS {
+            self.history.remove(&(self.day - HISTORY_DAYS));
+        }
         let was_flood = world::is_flood(self.world_seed, self.day);
         let old_season = season_of(self.day);
         self.day += 1;
@@ -642,40 +675,17 @@ impl Market {
         U128(total)
     }
 
-    /// Closes the shop's books for the day. If its purse grew, half of the profit,
-    /// times the investors' fraction of all shares, goes to the dividend pool.
+    /// Closes the shop's books for the day. If its purse rose above its best
+    /// level so far, half of that profit, times the investors' fraction of all
+    /// shares, goes to the dividend pool.
     pub fn settle_day(&mut self) -> U128 {
         let me = env::predecessor_account_id();
-        let mut m = self.merchant(&me);
+        let m = self.merchant(&me);
         require!(m.last_settle_day != Some(self.day), "already settled today");
-        let purse = self.balance(KAURI, &me);
-        let profit = purse.saturating_sub(m.last_mark);
-        let mut dividend = 0;
-        if profit > 0 && m.shares_issued > 0 {
-            dividend = profit * DIVIDEND_BPS / pricing::BPS * m.shares_issued
-                / (FOUNDER_SHARES + m.shares_issued);
-        }
+        let dividend = self.crystallize(&me);
+        let mut m = self.merchant(&me);
         m.last_settle_day = Some(self.day);
-        m.last_mark = purse - dividend;
-        if dividend > 0 {
-            m.acc_per_share += dividend * ACC_SCALE / m.shares_issued;
-            m.dividend_pool += dividend;
-        }
         self.merchants.insert(me.clone(), m);
-        if dividend > 0 {
-            self.internal_transfer(
-                KAURI,
-                &me,
-                &env::current_account_id(),
-                dividend,
-                Some("dividend pool"),
-            );
-            events::haat(
-                "dividend",
-                near_sdk::serde_json::json!({ "merchant": me, "day": self.day, "profit": U128(profit), "dividend": U128(dividend) }),
-            );
-            self.log_chronicle("dividend", Some(me.clone()), None, Some(dividend));
-        }
         self.refresh_open(&me, None);
         U128(dividend)
     }
@@ -688,6 +698,9 @@ impl Market {
         let who = env::predecessor_account_id();
         require!(who != merchant_id, "a shop cannot invest in itself");
         require!(amount.0 >= MIN_INVEST, "invest at least 10 kauri");
+        // Profit made before this investment belongs to the existing owners.
+        self.crystallize(&merchant_id);
+        let was_open = self.balance(KAURI, &merchant_id) >= CLOSE_BELOW;
         let m = self.merchant(&merchant_id);
         let value = self.shop_value(&merchant_id, &m).max(MIN_SHOP_VALUE);
         let shares = amount.0 * (FOUNDER_SHARES + m.shares_issued) / value;
@@ -702,12 +715,20 @@ impl Market {
             "invest",
             near_sdk::serde_json::json!({ "investor": who, "merchant": merchant_id, "amount": amount, "shares": U128(shares) }),
         );
-        self.log_chronicle(
-            "invest",
-            Some(merchant_id.clone()),
-            Some(who.clone()),
-            Some(amount.0),
-        );
+        if amount.0 >= CHRONICLE_MIN_INVEST {
+            self.log_chronicle(
+                "invest",
+                Some(merchant_id.clone()),
+                Some(who.clone()),
+                Some(amount.0),
+            );
+        }
+        if !was_open && self.balance(KAURI, &merchant_id) >= CLOSE_BELOW {
+            if let Some(mut p) = self.players.get(&who).cloned() {
+                p.rescues += 1;
+                self.players.insert(who.clone(), p);
+            }
+        }
         self.refresh_open(&merchant_id, Some(who));
         U128(shares)
     }
@@ -816,7 +837,7 @@ impl Market {
             stock_factor_bps: U128(pricing::stock_factor_bps(shelf.stock, shelf.levers.target)),
             demand_factor_bps: U128(pricing::demand_factor_bps(shelf.recent_buys)),
             merchant_kauri: U128(self.balance(KAURI, &merchant_id)),
-            open: m.open,
+            open: self.balance(KAURI, &merchant_id) >= CLOSE_BELOW,
         }
     }
 
@@ -857,13 +878,13 @@ impl Market {
         }
     }
 
-    /// Daily snapshots from `from_day`, at most `limit` of them.
+    /// Daily snapshots from `from_day`, at most `limit` (60) of them. Only the
+    /// last 60 days are kept on chain.
     pub fn history(&self, from_day: u32, limit: u32) -> Vec<DaySnapshot> {
-        self.history
-            .iter()
-            .skip(from_day as usize)
-            .take(limit.min(60) as usize)
-            .cloned()
+        let first = from_day.max(self.day.saturating_sub(HISTORY_DAYS));
+        (first..self.day)
+            .take(limit.min(HISTORY_DAYS) as usize)
+            .filter_map(|d| self.history.get(&d).cloned())
             .collect()
     }
 
@@ -872,17 +893,71 @@ impl Market {
         self.snapshot()
     }
 
+    /// Chronicle entries from `from_index`, at most `limit` (100). Only the last
+    /// 400 entries are kept on chain.
     pub fn chronicle(&self, from_index: u32, limit: u32) -> Vec<ChronicleEntry> {
-        self.chronicle
-            .iter()
-            .skip(from_index as usize)
+        let first = from_index.max(self.chronicle_len.saturating_sub(CHRONICLE_KEEP));
+        (first..self.chronicle_len)
             .take(limit.min(100) as usize)
-            .cloned()
+            .filter_map(|i| self.chronicle.get(&i).cloned())
             .collect()
     }
 
+    /// One page of players with their net worth: kauri, goods at today's city
+    /// prices, shares at their part of the shop's value, and dividends waiting.
+    /// The caller sorts.
+    pub fn leaderboard(&self, from_index: u32, limit: u32) -> Vec<LeaderRow> {
+        let season = season_of(self.day);
+        self.player_ids
+            .iter()
+            .skip(from_index as usize)
+            .take(limit.min(100) as usize)
+            .map(|id| {
+                let kauri = self.balance(KAURI, id);
+                let goods: u128 = ITEMS
+                    .iter()
+                    .map(|t| self.balance(t, id) * pricing::city_price(t, season))
+                    .sum();
+                let shares: u128 = self
+                    .merchants
+                    .iter()
+                    .map(|(mid, m)| {
+                        let held = self.balance(&share_token(mid), id);
+                        held * self.shop_value(mid, m) / (FOUNDER_SHARES + m.shares_issued)
+                            + self.pending_dividends(mid, m, id)
+                    })
+                    .sum();
+                LeaderRow {
+                    account_id: id.clone(),
+                    kauri: U128(kauri),
+                    net_worth: U128(kauri + goods + shares),
+                    rescues: self.players.get(id).map(|p| p.rescues).unwrap_or(0),
+                }
+            })
+            .collect()
+    }
+
+    // ---------- storage for outside accounts ----------
+
+    /// Lets an account that is not a player or shop receive tokens by standard
+    /// transfer. It pays once for the storage its balances will use.
+    #[payable]
+    pub fn storage_deposit(&mut self, account_id: Option<AccountId>) -> bool {
+        let id = account_id.unwrap_or_else(env::predecessor_account_id);
+        require!(
+            env::attached_deposit() >= STORAGE_DEPOSIT,
+            "attach 0.01 NEAR to cover storage"
+        );
+        self.known.insert(id)
+    }
+
+    /// True when the account can receive tokens by standard transfer.
+    pub fn is_registered(&self, account_id: AccountId) -> bool {
+        self.can_receive(&account_id)
+    }
+
     pub fn chronicle_len(&self) -> u32 {
-        self.chronicle.len()
+        self.chronicle_len
     }
 }
 
@@ -910,7 +985,7 @@ impl Market {
     fn open_shop(&self, id: &AccountId, token_id: &str) -> (Merchant, usize) {
         let m = self.merchant(id);
         require!(
-            m.open,
+            self.balance(KAURI, id) >= CLOSE_BELOW,
             format!("{}'s shop is closed until someone invests", m.name)
         );
         let idx = m
@@ -961,7 +1036,7 @@ impl Market {
         MerchantView {
             account_id: id.clone(),
             name: m.name.clone(),
-            open: m.open,
+            open: self.balance(KAURI, id) >= CLOSE_BELOW,
             kauri: U128(self.balance(KAURI, id)),
             value: U128(self.shop_value(id, m)),
             shares_issued: U128(m.shares_issued),
@@ -988,7 +1063,7 @@ impl Market {
                 .map(|(id, m)| ShopSnap {
                     merchant_id: id.clone(),
                     kauri: U128(self.balance(KAURI, id)),
-                    open: m.open,
+                    open: self.balance(KAURI, id) >= CLOSE_BELOW,
                     shelves: (0..m.policies.len())
                         .map(|i| {
                             let s = self.shelf(id, m, i);
@@ -1057,13 +1132,68 @@ impl Market {
         account_id: Option<AccountId>,
         amount: Option<u128>,
     ) {
-        self.chronicle.push(ChronicleEntry {
-            day: self.day,
-            kind: kind.to_string(),
-            merchant_id,
-            account_id,
-            amount: amount.map(U128),
-        });
+        self.chronicle.insert(
+            self.chronicle_len,
+            ChronicleEntry {
+                day: self.day,
+                kind: kind.to_string(),
+                merchant_id,
+                account_id,
+                amount: amount.map(U128),
+            },
+        );
+        if self.chronicle_len >= CHRONICLE_KEEP {
+            self.chronicle
+                .remove(&(self.chronicle_len - CHRONICLE_KEEP));
+        }
+        self.chronicle_len += 1;
+    }
+
+    /// Pays investors their part of any profit above the shop's high-water
+    /// mark, the best purse it has had. The mark never falls, so cash that only
+    /// goes out and comes back is never paid out twice.
+    fn crystallize(&mut self, me: &AccountId) -> u128 {
+        let mut m = self.merchant(me);
+        let purse = self.balance(KAURI, me);
+        if purse <= m.last_mark {
+            return 0;
+        }
+        let profit = purse - m.last_mark;
+        let mut dividend = 0;
+        if m.shares_issued > 0 {
+            dividend = profit * DIVIDEND_BPS / pricing::BPS * m.shares_issued
+                / (FOUNDER_SHARES + m.shares_issued);
+        }
+        m.last_mark = purse - dividend;
+        if dividend > 0 {
+            m.acc_per_share += dividend * ACC_SCALE / m.shares_issued;
+            m.dividend_pool += dividend;
+        }
+        self.merchants.insert(me.clone(), m);
+        if dividend > 0 {
+            self.internal_transfer(
+                KAURI,
+                me,
+                &env::current_account_id(),
+                dividend,
+                Some("dividend pool"),
+            );
+            events::haat(
+                "dividend",
+                near_sdk::serde_json::json!({ "merchant": me, "day": self.day, "profit": U128(profit), "dividend": U128(dividend) }),
+            );
+            self.log_chronicle("dividend", Some(me.clone()), None, Some(dividend));
+        }
+        dividend
+    }
+
+    /// Players, shops, the contract itself and accounts that paid a storage
+    /// deposit can receive tokens.
+    pub(crate) fn can_receive(&self, id: &AccountId) -> bool {
+        id == &env::current_account_id()
+            || self.players.contains_key(id)
+            || self.merchants.contains_key(id)
+            || self.known.contains(id)
     }
 }
 

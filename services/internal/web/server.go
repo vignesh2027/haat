@@ -508,7 +508,7 @@ func (s *Server) reveal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sess.Recovery == "" {
-		setFlash(w, "err", "Your recovery key was already shown once and is no longer kept anywhere by the game.")
+		setFlash(w, "err", "Your recovery key was already shown once and this browser no longer carries it.")
 		http.Redirect(w, r, "/ledger", http.StatusSeeOther)
 		return
 	}

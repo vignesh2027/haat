@@ -194,6 +194,14 @@ async fn sandbox_end_to_end() -> testresult::TestResult<()> {
 async fn sandbox_nep245_transfers() -> testresult::TestResult<()> {
     let w = setup().await?;
 
+    // Outside accounts pay a storage deposit once before they can receive tokens.
+    w.call(&w.kavya, "mt_transfer", json!({ "receiver_id": w.owner, "token_id": "kauri", "amount": "5" }), 1)
+        .await?
+        .assert_failure();
+    w.call(&w.owner, "storage_deposit", json!({}), 10_000_000_000_000_000_000_000)
+        .await?
+        .assert_success();
+
     // Standard transfers need exactly one yoctoNEAR.
     w.call(
         &w.kavya,
@@ -230,5 +238,7 @@ async fn sandbox_nep245_transfers() -> testresult::TestResult<()> {
 
     let supply = w.view("mt_supply", json!({ "token_id": "kauri" })).await?;
     assert_eq!(supply, json!("1900"));
+    let meta = w.view("mt_metadata_token_all", json!({ "token_ids": ["kauri"] })).await?;
+    assert_eq!(meta[0]["base"]["symbol"], "KAURI");
     Ok(())
 }

@@ -14,7 +14,8 @@
 //!    empty. When it has more it pays less, and the price keeps falling as the
 //!    stall floods.
 //! 3. When players have been buying an item from a shop, the shop charges up to
-//!    50% more for it. That demand fades by half every day.
+//!    50% more for it. That demand fades by half every day. Demand never raises
+//!    what a shop pays you, so buying and selling straight back always loses.
 //! 4. The shop keeps a margin: it asks a little above that fair value and bids
 //!    a little below it. Each shopkeeper picks its own target and margin.
 //! 5. A trade of many units is priced one unit at a time, so every extra mango
@@ -124,12 +125,9 @@ pub fn ask_one(shelf: &Shelf) -> Option<u128> {
 /// Price the shop bids for the next unit a player sells. The stock used is the
 /// stock after the purchase. Zero means the shop will not buy any more.
 pub fn bid_one(shelf: &Shelf) -> u128 {
-    let fair = fair_milli(
-        shelf.city,
-        shelf.stock + 1,
-        shelf.levers.target,
-        shelf.recent_buys,
-    );
+    // No demand factor here: recent buying makes things dearer to buy, never
+    // dearer to sell back, or a buy-then-sell round trip would print money.
+    let fair = fair_milli(shelf.city, shelf.stock + 1, shelf.levers.target, 0);
     fair * (BPS - shelf.levers.margin_bps.min(BPS)) / (BPS * 1_000)
 }
 

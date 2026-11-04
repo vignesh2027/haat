@@ -15,6 +15,17 @@ fn as_caller(who: &str) {
     );
 }
 
+fn register_outside(m: &mut Market, who: &str) {
+    testing_env!(
+        VMContextBuilder::new()
+            .current_account_id(acc("market.test"))
+            .predecessor_account_id(acc(who))
+            .attached_deposit(STORAGE_DEPOSIT)
+            .build()
+    );
+    assert!(m.storage_deposit(None));
+}
+
 fn as_caller_with_yocto(who: &str) {
     testing_env!(
         VMContextBuilder::new()
@@ -421,6 +432,7 @@ fn transferred_shares_keep_earned_dividends_with_the_seller() {
 #[test]
 fn mt_transfer_moves_tokens_and_logs_nep245() {
     let mut m = setup();
+    register_outside(&mut m, "friend.test");
     as_caller_with_yocto("kavya.test");
     m.mt_transfer(
         acc("friend.test"),
@@ -451,6 +463,7 @@ fn mt_transfer_needs_one_yocto() {
 #[should_panic(expected = "duplicate token id")]
 fn batch_rejects_duplicates() {
     let mut m = setup();
+    register_outside(&mut m, "friend.test");
     as_caller_with_yocto("kavya.test");
     m.mt_batch_transfer(
         acc("friend.test"),
@@ -523,4 +536,232 @@ fn play_moves_parse_from_json() {
     )
     .unwrap();
     assert_eq!(moves.len(), 2);
+}
+
+/// Gives a player extra kauri from a rich helper shop, through a standard transfer.
+fn fund(m: &mut Market, who: &str, amount: u128) {
+    as_caller("owner.test");
+    if m.get_merchant(acc("bank.test")).is_none() {
+        m.add_merchant(
+            acc("bank.test"),
+            "Bank".into(),
+            vec!["rice".into()],
+            U128(1_000_000),
+            vec![U128(0)],
+        );
+    }
+    as_caller_with_yocto("bank.test");
+    m.mt_transfer(acc(who), KAURI.into(), U128(amount), None, None);
+}
+
+// Review finding H1: buying raised the demand factor, which also raised the
+// shop's bid, so buy-then-sell in one play() call made money.
+#[test]
+fn regression_buy_then_sell_back_never_profits() {
+    let mut m = setup();
+    as_caller("meena.test");
+    m.set_policies(
+        vec![Policy {
+            token_id: "chilli".into(),
+            target_stock: 40,
+            margin_bps: 600,
+        }],
+        "thin".into(),
+    );
+    fund(&mut m, "kavya.test", 3_000);
+    let before = bal(&m, KAURI, "kavya.test");
+    as_caller("kavya.test");
+    m.play(vec![
+        Move::Buy {
+            merchant_id: acc("meena.test"),
+            token_id: "chilli".into(),
+            amount: U128(10),
+            max_total: U128(10_000),
+        },
+        Move::Sell {
+            merchant_id: acc("meena.test"),
+            token_id: "chilli".into(),
+            amount: U128(10),
+            min_total: U128(0),
+        },
+    ]);
+    assert!(
+        bal(&m, KAURI, "kavya.test") < before,
+        "a round trip must cost money"
+    );
+}
+
+#[test]
+fn property_round_trips_lose_for_every_shelf() {
+    use pricing::*;
+    for city in [48u128, 60, 80, 112, 300, 600] {
+        for target in [1u128, 4, 6, 15, 30, 40, 200] {
+            for margin_bps in [200u128, 600, 1_000, 4_000] {
+                for stock in [1u128, 5, 10, 20, 40, 80] {
+                    for recent_buys in [0u128, 3, 10] {
+                        for n in [1u128, 5, 10] {
+                            let shelf = Shelf {
+                                city,
+                                stock,
+                                recent_buys,
+                                levers: Levers { target, margin_bps },
+                            };
+                            let Some((cost, _)) = quote_shop_sells(&shelf, n) else {
+                                continue;
+                            };
+                            let after = Shelf {
+                                stock: stock - n,
+                                recent_buys: recent_buys + n,
+                                ..shelf
+                            };
+                            let (back, _) = quote_shop_buys(&after, n);
+                            assert!(
+                                back < cost,
+                                "profit: city {city} target {target} margin {margin_bps} stock {stock} n {n}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Review finding H2: a falling purse reset the dividend mark, so cash that only
+// went out and came back was paid out again and again.
+#[test]
+fn regression_dividends_only_from_new_highs() {
+    let mut m = setup();
+    fund(&mut m, "kavya.test", 20_000);
+    as_caller("kavya.test");
+    m.invest(acc("meena.test"), U128(1_000));
+    let purse_start = bal(&m, KAURI, "meena.test");
+    let mut dividends = 0;
+    for _ in 0..5 {
+        as_caller("kavya.test");
+        m.buy(acc("meena.test"), "chilli".into(), U128(8), U128(100_000));
+        as_caller("meena.test");
+        dividends += m.settle_day().0;
+        as_caller("owner.test");
+        m.advance_day();
+        as_caller("kavya.test");
+        m.sell(acc("meena.test"), "chilli".into(), U128(8), U128(0));
+        as_caller("meena.test");
+        dividends += m.settle_day().0;
+        as_caller("owner.test");
+        m.advance_day();
+    }
+    let purse_end = bal(&m, KAURI, "meena.test");
+    let real_gain = (purse_end + dividends).saturating_sub(purse_start);
+    assert!(
+        dividends <= real_gain,
+        "paid {dividends} in dividends on a real gain of {real_gain}"
+    );
+}
+
+// Review finding M3: investing just before the evening settle took a share of
+// profit made before the investment.
+#[test]
+fn regression_late_investors_do_not_share_earlier_profit() {
+    let mut m = setup();
+    as_caller("owner.test");
+    m.register_player(acc("arjun.test"));
+    as_caller("kavya.test");
+    m.invest(acc("meena.test"), U128(300));
+    as_caller("meena.test");
+    m.city_sell("chilli".into(), U128(10)); // a good day, before arjun invests
+    as_caller("arjun.test");
+    m.invest(acc("meena.test"), U128(300));
+    as_caller("meena.test");
+    m.settle_day();
+    let arjun = m.get_player(acc("arjun.test"));
+    assert_eq!(
+        arjun.holdings[0].pending_dividends.0, 0,
+        "arjun was not there for that profit"
+    );
+    let kavya = m.get_player(acc("kavya.test"));
+    assert!(kavya.holdings[0].pending_dividends.0 > 0);
+}
+
+// Review finding M2: the open flag only changed on game calls.
+#[test]
+fn regression_kauri_sent_to_a_closed_shop_reopens_it() {
+    let mut m = setup();
+    bankrupt_meena(&mut m);
+    assert!(!m.get_merchant(acc("meena.test")).unwrap().open);
+    as_caller_with_yocto("kavya.test");
+    m.mt_transfer(acc("meena.test"), KAURI.into(), U128(300), None, None);
+    assert!(m.get_merchant(acc("meena.test")).unwrap().open);
+    let last = m.chronicle(0, 100).pop().unwrap();
+    assert_eq!(last.kind, "shop_reopened");
+}
+
+// Review finding M4: transfers to arbitrary accounts made the contract pay storage.
+#[test]
+#[should_panic(expected = "receiver is not registered")]
+fn transfers_to_unregistered_accounts_are_refused() {
+    let mut m = setup();
+    as_caller_with_yocto("kavya.test");
+    m.mt_transfer(acc("stranger.test"), KAURI.into(), U128(1), None, None);
+}
+
+#[test]
+#[should_panic(expected = "attach 0.01 NEAR")]
+fn storage_deposit_needs_the_deposit() {
+    let mut m = setup();
+    as_caller("stranger.test");
+    m.storage_deposit(None);
+}
+
+#[test]
+fn history_keeps_the_last_sixty_days() {
+    let mut m = setup();
+    as_caller("owner.test");
+    for _ in 0..70 {
+        m.advance_day();
+    }
+    let h = m.history(0, 100);
+    assert_eq!(h.len(), 60);
+    assert_eq!(h[0].day, 10);
+    assert_eq!(h[59].day, 69);
+}
+
+#[test]
+fn metadata_names_every_token() {
+    let m = setup();
+    assert_eq!(m.mt_metadata_contract().spec, "mt-1.0.0");
+    let all = m.mt_metadata_token_all(vec![
+        KAURI.into(),
+        "pickle".into(),
+        share_token(&acc("meena.test")),
+        "gold".into(),
+    ]);
+    assert_eq!(
+        all[0].as_ref().unwrap().base.symbol.as_deref(),
+        Some("KAURI")
+    );
+    assert!(
+        all[1]
+            .as_ref()
+            .unwrap()
+            .token
+            .description
+            .as_ref()
+            .unwrap()
+            .contains("Diwali")
+    );
+    assert!(all[2].as_ref().unwrap().base.name.starts_with("Shares in"));
+    assert!(all[3].is_none());
+}
+
+#[test]
+fn leaderboard_counts_rescues_and_net_worth() {
+    let mut m = setup();
+    bankrupt_meena(&mut m);
+    as_caller("kavya.test");
+    m.invest(acc("meena.test"), U128(200));
+    let rows = m.leaderboard(0, 10);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].rescues, 1);
+    assert!(rows[0].net_worth.0 >= rows[0].kauri.0);
 }

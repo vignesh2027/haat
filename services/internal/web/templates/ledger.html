@@ -14,7 +14,7 @@
   {{with .Reveal}}
   <section class="card reveal">
     <h2>Your recovery key</h2>
-    <p><b>This is shown once.</b> The game has now removed it from your browser pass and keeps no copy anywhere. Save it now. Anyone holding it controls your account.</p>
+    <p><b>This is shown once.</b> The game has removed it from this browser's pass and never stored it on the server. An older copy of the pass (another tab or a saved link) could still carry it, so treat it like a password from now on. Anyone holding it controls your account. With it you can also delete the play key, which ends the game's ability to act for you.</p>
     <pre class="secret">{{.Secret}}</pre>
     <p>Public key: <code>{{.Public}}</code></p>
     <p><a class="btn btn-primary" download="{{.FileName}}" href="{{.DataURL}}">Download as a near-cli credentials file</a></p>
