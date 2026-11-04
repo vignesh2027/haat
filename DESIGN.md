@@ -45,7 +45,7 @@ The logo is original: a scalloped market awning over a cowrie shell (kauri, the 
 4. The goal for the year: be the richest trader on Diwali, the last day of the festival season. Each shop you rescue earns a lamp on the leaderboard.
 5. The market dashboard shows every price, every purse and every bankruptcy, read from the contract.
 
-Fast-forward plays seven days back to back (about 20 seconds on the local node, about a minute on testnet) with six villager NPCs trading, so a judge can watch a season turn, a flood, a bankruptcy and a rescue.
+Fast-forward plays seven days back to back (about 20 seconds on the local node, about three minutes on testnet, where every day is several rounds of real transactions) with six villager NPCs trading, so a judge can watch a season turn, a flood, a bankruptcy and a rescue.
 
 ## 3. The world
 

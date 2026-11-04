@@ -10,7 +10,7 @@
 
   <div class="dash-ff">  <section class="card ffcard">
     <h2>Fast-forward a week</h2>
-    <p class="sub">Seven days of trading back to back, about a minute. Villagers gather and trade, shopkeepers decide, floods come and go.</p>
+    <p class="sub">Seven days of trading back to back: about 20 seconds on a local node, about three minutes on testnet. Villagers trade, shopkeepers decide, floods come and go.</p>
     {{if .FF.Running}}<p><b>Running: day {{.FF.Day}} of {{.FF.Of}}.</b></p>
     {{else if gt .FFLeft 0}}<form method="post" action="/fast-forward"><button class="btn btn-violet">⏩ Fast-forward 7 days</button></form>
     {{else}}<p class="muted small">Already used this hour on the shared demo. Locally, <code>make localnet</code> has no limit.</p>{{end}}
