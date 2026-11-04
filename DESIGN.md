@@ -129,7 +129,7 @@ NEAR AI Cloud was checked first as the sponsor's inference offering. It needs a 
 
 ### Villagers
 
-Six villager NPCs (mango picker, fisher, pickle maker, chilli farmer, trader, investor) play through exactly the same path as a human: a play key, one batched `play()` call per day, and gas paid by the relayer. The investor rescues a shop that has been closed for a full day, which leaves a human player a day to do it first.
+Six villager NPCs (mango picker, fisher, pickle maker, chilli farmer, trader, investor) play through exactly the same path as a human: a play key, one batched `play()` call per day, and gas paid by the relayer. The investor rescues a shop that has been closed for a full day, which leaves a human player a day to do it first. Villagers are not ranked on the leaderboard, since they play every day whether anyone else does.
 
 ## 5. Contract interface
 
