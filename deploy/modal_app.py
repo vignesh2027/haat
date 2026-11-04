@@ -44,7 +44,7 @@ hosted = modal.Secret.from_dict(
         "HAAT_TRUST_PROXY": "1",
         "HAAT_DAY_MINUTES": "15",
         "HAAT_IDLE_MINUTES": "30",
-        "HAAT_FF_PER_HOUR": "2",
+        "HAAT_FF_PER_HOUR": "3",
         "HAAT_DAILY_TX_BUDGET": "1500",
         "HAAT_ACCOUNT_POOL": "2",
     }

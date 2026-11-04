@@ -63,7 +63,7 @@ func newLimits() *limits {
 		startPerIP: newLimiter(3.0/3600, 3),
 		actPerAcct: newLimiter(2, 10),
 		actPerIP:   newLimiter(5, 25),
-		ffPerAcct:  newLimiter(1.0/600, 1),
+		ffPerAcct:  newLimiter(1.0/300, 2),
 	}
 }
 

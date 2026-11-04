@@ -45,7 +45,7 @@ The logo is original: a scalloped market awning over a cowrie shell (kauri, the 
 4. The goal for the year: be the richest trader on Diwali, the last day of the festival season. Each shop you rescue earns a lamp on the leaderboard.
 5. The market dashboard shows every price, every purse and every bankruptcy, read from the contract.
 
-Fast-forward plays seven days back to back (about 20 seconds on the local node, about three minutes on testnet, where every day is several rounds of real transactions) with six villager NPCs trading, so a judge can watch a season turn, a flood, a bankruptcy and a rescue.
+Fast-forward plays one day or seven days back to back (about 20 seconds on the local node, about three minutes on testnet, where every day is several rounds of real transactions) with six villager NPCs trading, so a judge can watch a season turn, a flood, a bankruptcy and a rescue.
 
 ## 3. The world
 
@@ -118,12 +118,25 @@ The contract computes prices; each shopkeeper chooses its own levers per item an
 |---|---|---|---|
 | Ramu Kaka | rice, mango | cautious | 20% margin; keeps 60% of his opening purse in cash and buys little below it |
 | Meena Didi | chilli, pickle | bold | 6% margin, big targets; bets her purse on chillies before the rains and on pickle before Diwali; careful after a rescue until her cash box is one and a half times its opening size |
-| Bashir Bhai | fish, rice | reads the panchang | 12% margin; two days before a flood he widens his margin, lowers targets and sells to the city while the road is open |
+| Bashir Bhai | fish, rice | reads the panchang | 12% margin; two days before a flood he widens his margin, sells extra fish to the city and stocks rice while the road is open, then buys the fish glut cheaply during the floods |
 | Lakshmi Amma | mango, pickle | craftswoman | buys mangoes in summer, buys chillies from the city, makes pickle and sells it near Diwali |
+
+### Character limits
+
+Each shop's character is stored in the contract when it opens, and the contract refuses decisions outside it:
+
+| Shopkeeper | Margin | Largest target | Cash reserve | Also |
+|---|---|---|---|---|
+| Ramu Kaka | 18% to 25% | 20 | 1,800 kauri | |
+| Meena Didi | 4% to 18% | 60 | none: she can go broke | |
+| Bashir Bhai | 10% to 25% | 25 | 1,250 kauri | buys from the city only when the panchang shows a flood within two days |
+| Lakshmi Amma | 10% to 20% | 30 | 600 kauri | |
+
+A shop never spends its reserve, neither on players' goods nor on the city cart, so the prudent shops cannot be driven to closing. Only bold Meena can go broke, which is her story.
 
 ### How a shopkeeper decides
 
-Each review, the agent reads its shop and the world from the chain. Its rule book (`services/internal/merchant/persona.go`) proposes a decision. If an open model is configured (Groq's free tier, the open-weights `openai/gpt-oss-20b`; `services/internal/merchant/brain.go`), the agent sends the model its situation, its temperament and the rule book's proposal, and the model chooses the levers, city trades, pickle and note. The answer is validated: every item needs a policy inside the contract's bounds; city purchases may not cost more than the rule book would spend or a third of the cash box; the city cart gets only stock above the chosen target; nothing is bought and sold in the same go; and nothing is sold that the same transaction uses for pickle. If the model is slow, over its free allowance or gives an unusable answer, the rule book decides. Either way the agent signs one transaction and the stall shows which way it went, with the rule book's suggestion and the transaction.
+Each review, the agent reads its shop and the world from the chain. Its rule book (`services/internal/merchant/persona.go`) proposes a decision: levers, city cart trades, pickle to make and a note. If an open model is configured (Groq's free tier, the open-weights `openai/gpt-oss-20b`; `services/internal/merchant/brain.go`), the model makes the day's key choice, once per shopkeeper per game day: target stock and margin for each item, and the note. Later reviews the same day reuse that choice, and a day whose situation matches one seen before (same season, weather, cash band and stock levels) reuses that day's choice without calling the model, so the free allowance lasts through a fast-forward. City trades and crafting stay with the rule book, which sizes them to the shop's cash, reserve and stock. Every decision is clamped to the character limits before signing. If the model is slow, over its allowance or gives an unusable answer, the rule book decides. The stall shows which way each decision went, the rule book's suggestion and the signed transaction.
 
 NEAR AI Cloud was checked first as the sponsor's inference offering. It needs a dashboard key and paid credits, so the default is Groq's free tier.
 
@@ -146,13 +159,14 @@ One contract, `market.<root>`, Rust with near-sdk 5.
 | Method | Caller | Effect |
 |---|---|---|
 | `new(owner_id, world_seed)` | deployer | initialise |
-| `reset_world(owner_id, world_seed)` | the market account itself | start a fresh world on a deployed market |
-| `add_merchant(account_id, name, items, opening_kauri, opening_stock)` | owner | open a shop |
+| `reset_world(owner_id, world_seed, world_name)` | the market account itself | start a fresh world on a deployed market, under a new storage name |
+| `add_merchant(account_id, name, items, opening_kauri, opening_stock, bounds)` | owner | open a shop with its character limits |
 | `register_player(account_id)` | owner | one-time starter purse of 400 kauri |
 | `advance_day()` | owner | next day, price snapshot, season and flood entries |
 | `gather`, `craft`, `sell`, `buy`, `invest`, `claim_dividends` | player | the moves |
 | `play(moves)` | player | up to 10 moves in one call, all or nothing |
-| `set_policies(policies, note)` | shop itself | change its levers |
+| `set_policies(policies, note)` | shop itself | change its levers, inside its character limits |
+| `set_bounds(account_id, bounds)` | owner | change a shop's character limits |
 | `city_sell`, `city_buy` | shop itself | trade with the city cart |
 | `settle_day()` | shop itself | once a day, fund dividends from new highs |
 
@@ -209,6 +223,7 @@ The browser gets HTML and CSS plus one small inline script that sends moves in t
 - `cargo test --lib`: pricing, seasons, gathering, trades, bankruptcy, investment and dividends, NEP-245 transfers, events and metadata, storage registration, history limits, leaderboard, and regression tests for every economic finding of the independent review.
 - `cargo test --test sandbox`: deploys the compiled contract to a local near-sandbox and plays real transactions, including the `mt_transfer_call` refund path.
 - `go test ./...`: borsh layouts, signing, meta transactions, relayer policy, rule books, model answer validation and spending guards, villager plans, the move queue, limits, cookies and page rendering.
+- `make story` plays a seeded week (floods on days 7, 8 and 10) on a private local node with the rule books and asserts the story: Meena goes broke and is rescued, Ramu, Bashir and Lakshmi never close, and Bashir's purse ends the week above where it started.
 - `make localnet` and `make fast-forward` run the whole game on a local node.
 
 ## 10. Demo video script (2 minutes)

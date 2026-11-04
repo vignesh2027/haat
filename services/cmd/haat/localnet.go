@@ -175,6 +175,10 @@ func (a *app) startLocalnet(ctx context.Context) (func(), error) {
 		"HAAT_FF_PER_HOUR":      "60",
 		"HAAT_MARKET_FUNDING":   "10",
 		"HAAT_MERCHANT_FUNDING": "5",
+		// The seeded story: the village opens on day 3, the monsoon starts on
+		// day 7 and the road floods on days 7, 8 and 10.
+		"HAAT_WORLD_SEED": "129",
+		"HAAT_START_DAY":  "3",
 	}
 	for k, v := range defaults {
 		if _, set := os.LookupEnv(k); !set && a.env.Get(k) == "" {

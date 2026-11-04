@@ -578,12 +578,16 @@ func (s *Server) fastForward(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	if !s.limits.ffPerAcct.allow(sess.Account) {
+	if s.Network != "localnet" && !s.limits.ffPerAcct.allow(sess.Account) {
 		setFlash(w, "err", "You fast-forwarded a little while ago. Give the village a few minutes.")
 		http.Redirect(w, r, "/market", http.StatusSeeOther)
 		return
 	}
-	switch err := s.Keeper.StartFastForward(7); {
+	days := 7
+	if r.FormValue("days") == "1" {
+		days = 1
+	}
+	switch err := s.Keeper.StartFastForward(days); {
 	case errors.Is(err, world.ErrCapped):
 		setFlash(w, "err", "The village has already fast-forwarded this hour, to keep the shared demo affordable. Run it locally with `make localnet` for as many weeks as you like.")
 	case errors.Is(err, world.ErrBusy):
@@ -591,7 +595,11 @@ func (s *Server) fastForward(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		setFlash(w, "err", friendlyError(err))
 	default:
-		setFlash(w, "ok", "Fast-forward started: a week of trading with the villagers. The page refreshes as each day ends.")
+		if days == 1 {
+			setFlash(w, "ok", "Fast-forward started: one day of trading with the villagers.")
+		} else {
+			setFlash(w, "ok", "Fast-forward started: a week of trading with the villagers. The page refreshes as each day ends.")
+		}
 	}
 	http.Redirect(w, r, "/market", http.StatusSeeOther)
 }

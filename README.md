@@ -2,17 +2,19 @@
 
 # Haat
 
-A village market game on NEAR, for the Games With Real Economies track. You gather mangoes, rice, fish and chillies, trade them with four shopkeepers who are agents with their own NEAR accounts, ride out the monsoon, make pickle for Diwali, and rescue a broke shop by investing in it. Every item, coin and share is a NEP-245 token in one contract, every trade is a real transaction, and players never see a wallet, a key or a gas fee.
+A village market game on NEAR, for the Games With Real Economies track. Four shopkeepers are agents with their own NEAR accounts; prices move with stock and the monsoon; a bold shop goes broke and you can rescue it for a share of its profits. Every item, coin and share is a NEP-245 token, every move is a real transaction, and players never see a wallet, a key or a gas fee.
 
-Hosted demo: https://applemacbook6sep2004--haat-web.us-east.modal.run (NEAR testnet; one shared village)
+**Play now:** https://applemacbook6sep2004--haat-web.us-east.modal.run (NEAR testnet, one shared village)
 
-## What to look at in three minutes
+**Run it yourself in one command** (local NEAR node, no account needed): `make localnet`, then open http://localhost:8080
 
-1. Open the hosted demo or run it locally (below) and press **Enter the haat**. No sign-up: an account is made for you.
-2. Tap the mango grove a few times, then hover a price at Ramu Kaka's or Lakshmi Amma's stall: the tooltip explains the price from the same numbers the contract uses. Sell, and watch each extra mango fetch less.
-3. Open **How Meena Didi decided lately** on a stall: each shopkeeper's latest decisions, what its rule book suggested, what it chose and the transaction it signed.
-4. Go to **Market** and press **Fast-forward 7 days**. Villagers trade, shopkeepers decide, floods come, a bold shop goes broke and someone rescues it. Charts, the leaderboard and the chronicle update as each day ends.
-5. Open **Your ledger** to see the real account behind your basket and to take its recovery key with you.
+**Three things to try**
+
+1. **Enter, gather, sell.** Tap the mango grove a few times, then hover a price at a stall: the shopkeeper explains it from the same numbers the contract uses. Sell, and watch each extra mango fetch less.
+2. **Watch an agent decide.** Open "How Meena Didi decided lately" on her stall: her note, what her rule book suggested, what she chose, and the transaction she signed from her own account.
+3. **Fast-forward.** Press "1 day" until bold Meena goes broke (usually a day or two), rescue her with Invest, then "Fast-forward 7 days" into the monsoon floods and watch the market dashboard, the chronicle and your lamp on the leaderboard.
+
+`make story` checks those beats automatically: it plays a seeded week on a private node and asserts that Meena goes broke and is rescued, the prudent shops never close, and Bashir comes out of the floods ahead.
 
 ## Run it locally (no testnet account needed)
 
@@ -31,7 +33,7 @@ make fast-forward     # plays 7 days back to back (about 20 s) and prints the fe
 make localnet-reset   # wipes the local chain; the next make localnet starts a fresh village
 ```
 
-On a fresh village, Meena Didi usually goes broke on day 2 to 4 and Kishan, the investor villager, rescues her a day later unless you get there first.
+Every fresh local village is the same seeded story: it opens on day 3 of summer, the monsoon starts on day 7 and the road floods on days 7, 8 and 10. Bold Meena Didi usually goes broke on day 4 or 5; Kishan, the investor villager, rescues her a day later unless you get there first. Bashir Bhai, who reads the almanac, comes out of the floods ahead.
 
 Shopkeepers think with an open model when `GROQ_API_KEY` is set (in the environment or in `.env`; Groq's free tier, no card). Without it they use their rule books and the game is otherwise identical.
 
@@ -39,7 +41,8 @@ Shopkeepers think with an open model when `GROQ_API_KEY` is set (in the environm
 
 ```sh
 make test-unit   # contract unit tests and Go tests, no network (about 2 minutes cold)
-make test        # also deploys the contract to a local near-sandbox and plays real transactions
+make test        # also deploys the contract to a local near-sandbox, plays real transactions, and runs make story
+make story       # plays the seeded week on a private local node and checks the story beats (about 30 s)
 ```
 
 The contract tests include regression tests for every economic finding of the independent review in [REVIEW.md](REVIEW.md): a buy-then-sell round trip can never profit (plus a property test over many shelves), dividends come only from new highs, late investors do not share earlier profit, and a kauri transfer opens or closes a shop at once.
@@ -71,7 +74,7 @@ deploy/                   Modal app that runs the binary in one always-on contai
 
 **Prices.** All pricing is one readable file, [contract/src/pricing.rs](contract/src/pricing.rs), run on chain on every trade. A shop's fair price is the season's city price times a stock factor (2T / (T + s): twice the city price when empty, falling as the stall floods) times a demand factor for asking prices. The shop asks fair plus its margin and bids fair minus its margin, one unit at a time.
 
-**Shopkeepers.** Each is its own NEAR account with its own key and NEAR for gas. Each review, it reads the chain and decides its levers: target stock and margin per item, city cart trades, pickle to make, and a one-line note. With a model configured, the shopkeeper's model chooses them from its situation, its temperament and its rule book's advice ([brain.go](services/internal/merchant/brain.go)); answers are validated and clamped to the contract's bounds and to what the shop can afford and holds. Without a model, or when the free allowance is used up, the rule book decides ([persona.go](services/internal/merchant/persona.go)), and the stall says which. The shopkeeper signs the result as one transaction; the contract turns the levers into prices.
+**Shopkeepers.** Each is its own NEAR account with its own key and NEAR for gas, and each has a character with hard limits stored in the contract: a margin range, a largest target stock and a cash reserve it never spends (Ramu keeps 1,800 kauri back and a 18 to 25% margin; Bashir keeps 1,250 back and buys from the city only when the almanac shows a flood; bold Meena keeps nothing back). Once a game day, a shopkeeper's open model makes the day's key choice, its target stock and margin per item and the note it signs ([brain.go](services/internal/merchant/brain.go)); a day that looks like one seen before reuses that choice. Its rule book ([persona.go](services/internal/merchant/persona.go)) sizes city cart trades and pickle making, and decides everything when there is no model or the free allowance is used up; the stall says which. The agent clamps every decision to the character limits before signing, and the contract refuses anything outside them.
 
 **Login and gas.** On "Enter the haat" the server creates a named testnet account such as `anjali-e395.<root>.testnet` with two keys: a play key that can only call the market contract, and a full-access recovery key. Both keys are sealed into an encrypted, tamper-proof cookie (AES-GCM); the server keeps no database of keys. Every move is a NEP-366 meta transaction signed by the play key; the root account relays it and pays the gas. "Your ledger" shows the recovery key once and then removes it from the cookie, so the account is the player's alone. There is no free social or email login that works without a JavaScript wallet SDK and a dashboard sign-up, so the game uses this auto-created account and says so on the ledger page.
 
@@ -95,6 +98,7 @@ deploy/                   Modal app that runs the binary in one always-on contai
 | `HAAT_REVIEW_MINUTES` | 6 | routine shopkeeper reviews while players are around |
 | `HAAT_IDLE_MINUTES` | 30 | the clock stops when nobody has played for this long |
 | `HAAT_FF_PER_HOUR` | 1 (60 on localnet) | fast-forward runs allowed per hour |
+| `HAAT_WORLD_SEED`, `HAAT_START_DAY` | random and 0 (129 and 3 on localnet) | flood calendar seed and the day a new village opens |
 | `HAAT_FF_DAYS` | 7 | days played by `make fast-forward` |
 | `HAAT_MAX_NEW_PLAYERS_PER_HOUR` | 60 | global cap on new accounts |
 | `HAAT_ACCOUNT_POOL` | 2 | accounts made ahead of time so entering is instant |

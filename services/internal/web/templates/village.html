@@ -173,7 +173,7 @@
     <h2>Fast-forward a week</h2>
     <p class="sub">Seven days of trading back to back: about 20 seconds on a local node, about three minutes on testnet. Villagers trade, shopkeepers decide, floods come and go.</p>
     {{if .FF.Running}}<p><b>Running: day {{.FF.Day}} of {{.FF.Of}}.</b></p>
-    {{else if gt .FFLeft 0}}<form method="post" action="/fast-forward"><button class="btn btn-violet">⏩ Fast-forward 7 days</button></form>
+    {{else if gt .FFLeft 0}}<form method="post" action="/fast-forward" class="row"><button class="btn btn-violet" name="days" value="7">⏩ Fast-forward 7 days</button><button class="btn btn-ghost" name="days" value="1">1 day</button></form>
     {{else}}<p class="muted small">Already used this hour on the shared demo. Locally, <code>make localnet</code> has no limit.</p>{{end}}
     {{if and (not .FF.Running) .FF.Took}}{{if .FF.Err}}<p class="muted small">The last run stopped early because the NEAR endpoint was busy. The days it played are kept.</p>{{else}}<p class="muted small">Last run: {{.FF.Of}} days in {{ffsecs .FF}} seconds.</p>{{end}}{{end}}
   </section>
