@@ -116,27 +116,40 @@ func decideRamu(s Situation, d *Decision) {
 
 func decideMeena(s Situation, d *Decision) {
 	cash := int64(s.Shop.Kauri)
+	// With investors watching she is careful, until a full cash box makes her bold again.
+	careful := s.Shop.SharesIssued > 0 && cash < 2*s.Spec.OpeningKauri
 	for _, it := range s.Spec.Items {
-		target := 40
+		target, margin := 30, 600
 		if it == "pickle" {
-			target = 8
+			target = 6
 		}
-		d.Policies = append(d.Policies, market.Policy{TokenID: it, TargetStock: target, MarginBps: 600})
+		if careful {
+			target, margin = target/3, 1500
+		}
+		d.Policies = append(d.Policies, market.Policy{TokenID: it, TargetStock: target, MarginBps: margin})
 		stock := s.Shop.StockOf(it)
-		if s.roadOpen() && stock > int64(2*target) {
+		limit := int64(2 * target)
+		if careful {
+			limit = int64(target)
+		}
+		if s.roadOpen() && stock > limit {
 			d.CitySell[it] = stock - int64(target)
 		}
-		// She keeps her stall full of chillies whatever the city charges.
-		if it == "chilli" && s.roadOpen() && stock < 8 && cash > 400 {
+		// Bold Meena keeps her stall full of chillies whatever the city charges.
+		if it == "chilli" && !careful && s.roadOpen() && stock < 8 && cash > 400 {
 			d.CityBuy[it] = 12
 		}
 	}
-	d.Reasons = append(d.Reasons, "Thin margin, full shelves. Customers come back to a busy stall.")
+	switch {
+	case !s.Shop.Open:
+		d.Reasons = append(d.Reasons, "My cash box is empty. I need an investor to open again.")
+	case careful:
+		d.Reasons = append(d.Reasons, "My investors trusted me, so now I buy less, keep a wider margin and send extra stock to the city.")
+	default:
+		d.Reasons = append(d.Reasons, "Thin margin, full shelves. Customers come back to a busy stall.")
+	}
 	if d.CityBuy["chilli"] > 0 {
 		d.Reasons = append(d.Reasons, "Running low on chillies, I am ordering more from the city.")
-	}
-	if !s.Shop.Open {
-		d.Reasons = append(d.Reasons, "My cash box is empty. I need an investor to open again.")
 	}
 }
 
@@ -173,19 +186,19 @@ func decideLakshmi(s Situation, d *Decision) {
 	chilli := s.Shop.StockOf("chilli")
 	pickle := s.Shop.StockOf("pickle")
 	for _, it := range s.Spec.Items {
-		target, margin := 10, 1000
+		target, margin := 8, 1500
 		switch {
 		case it == "mango" && season == "garmi":
-			target = 30
+			target = 16
 		case it == "pickle" && season == "tyohar":
 			target = 6
 		case it == "pickle":
-			target = 12
+			target = 4 // she makes her own; she will not overpay for anyone else's
 		}
 		d.Policies = append(d.Policies, market.Policy{TokenID: it, TargetStock: target, MarginBps: margin})
 	}
 	// She turns mangoes into pickle, buying chillies from the city when she must.
-	if mango >= 6 && s.roadOpen() && cash > 800 && chilli < mango/2 {
+	if mango >= 6 && s.roadOpen() && cash > 600 && chilli < mango/2 {
 		buy := mango/2 - chilli
 		d.CityBuy["chilli"] = buy
 		chilli += buy
@@ -196,12 +209,20 @@ func decideLakshmi(s Situation, d *Decision) {
 		d.Reasons = append(d.Reasons, fmt.Sprintf("I am making %d jars of pickle from my mangoes.", d.Craft))
 		pickle += d.Craft
 	}
-	if s.roadOpen() && season == "tyohar" && pickle > pickleKeep {
-		d.CitySell["pickle"] = pickle - pickleKeep
-		d.Reasons = append(d.Reasons, "Diwali is near and the city pays double for pickle.")
+	keep := int64(pickleKeep)
+	if season != "tyohar" {
+		keep = 12
+	}
+	if s.roadOpen() && pickle > keep {
+		d.CitySell["pickle"] = pickle - keep
+		if season == "tyohar" {
+			d.Reasons = append(d.Reasons, "Diwali is near and the city pays double for pickle.")
+		} else {
+			d.Reasons = append(d.Reasons, "My shelf of pickle is full, the rest goes to the city.")
+		}
 	}
 	if season == "garmi" {
-		d.Reasons = append(d.Reasons, "Mango season. I buy every mango I can for pickle.")
+		d.Reasons = append(d.Reasons, "Mango season. I buy mangoes for pickle, but not at any price.")
 	}
 }
 
@@ -211,6 +232,9 @@ func clampCity(s Situation, d *Decision) {
 	cash := int64(s.Shop.Kauri)
 	if cash < cashCrunch && s.roadOpen() && s.Spec.Key != "meena" {
 		for _, p := range d.Policies {
+			if s.Spec.Key == "lakshmi" && p.TokenID == "mango" {
+				continue
+			}
 			stock := s.Shop.StockOf(p.TokenID)
 			if extra := stock - int64(p.TargetStock)/2; extra > d.CitySell[p.TokenID] {
 				d.CitySell[p.TokenID] = extra

@@ -19,6 +19,8 @@ Usage:
   haat [-env FILE] smoke       create a player and make one real trade end to end
   haat [-env FILE] status      print the world, the shops and account balances
   haat [-env FILE] serve       run the web game, the day clock and the shopkeeper agents
+  haat [-env FILE] localnet    run everything on a local near-sandbox node (add "reset" to wipe it)
+  haat [-env FILE] fast-forward  play 7 days back to back from the command line
   haat [-env FILE] review      let every shopkeeper review its shop once
   haat [-env FILE] end-day     settle every shop and move to the next day
 
@@ -47,6 +49,10 @@ func main() {
 		err = app.smoke(ctx)
 	case "status":
 		err = app.status(ctx)
+	case "localnet":
+		err = app.localnet(ctx, flag.Arg(1))
+	case "fast-forward":
+		err = app.fastForward(ctx)
 	case "serve":
 		err = app.serve(ctx)
 	case "review":

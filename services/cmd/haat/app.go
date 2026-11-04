@@ -18,6 +18,7 @@ import (
 	"haat/internal/merchant"
 	"haat/internal/near"
 	"haat/internal/players"
+	"haat/internal/world"
 )
 
 type app struct {
@@ -34,6 +35,9 @@ func loadApp(envPath string) (*app, error) {
 }
 
 func (a *app) explorer(hash string) string {
+	if a.env.Get("NEAR_EXPLORER_URL") == "" && a.env.Get("NEAR_NETWORK") == "localnet" {
+		return "tx " + hash
+	}
 	return strings.TrimRight(a.env.Or("NEAR_EXPLORER_URL", "https://testnet.nearblocks.io"), "/") + "/txns/" + hash
 }
 
@@ -225,6 +229,31 @@ func (a *app) bootstrap(ctx context.Context) error {
 			return fmt.Errorf("open shops: %w", err)
 		}
 		fmt.Println("opened", len(adds), "shops", a.explorer(out.Hash))
+		// Each shopkeeper sets its own prices for the first morning.
+		if k, _, _, err := a.keeper(); err == nil {
+			k.ReviewAll(ctx)
+		}
+	}
+	// 5. Villagers: NPC players that keep the market moving.
+	if a.env.Get("HAAT_VILLAGERS") == "" {
+		var entries []string
+		for _, v := range world.VillagerRoster {
+			id := v.Handle + "." + root.ID
+			if a.exists(ctx, id) {
+				continue
+			}
+			p, err := players.Create(ctx, root, marketID, v.Handle)
+			if err != nil {
+				return fmt.Errorf("villager %s: %w", v.Handle, err)
+			}
+			entries = append(entries, v.Handle+"="+p.Play.SecretKeyString())
+			fmt.Println("created villager", p.AccountID)
+		}
+		if len(entries) > 0 {
+			if err := a.env.Set("HAAT_VILLAGERS", strings.Join(entries, ",")); err != nil {
+				return err
+			}
+		}
 	}
 	if a.env.Get("HAAT_COOKIE_SECRET") == "" {
 		var b [32]byte
@@ -350,4 +379,33 @@ func (a *app) smoke(ctx context.Context) error {
 	fmt.Printf("basket: %d mango, purse: %d kauri\n", pv.Balance("mango"), pv.Balance("kauri"))
 	fmt.Printf("player NEAR balance before %s, after %s (unchanged: the relayer paid the gas)\n", formatNEAR(before), formatNEAR(after))
 	return nil
+}
+
+// villagers loads the NPC players written by bootstrap.
+func (a *app) villagers(rootID string) ([]*world.Villager, error) {
+	var out []*world.Villager
+	raw := a.env.Get("HAAT_VILLAGERS")
+	if raw == "" {
+		return nil, nil
+	}
+	habits := map[string]string{}
+	for _, v := range world.VillagerRoster {
+		habits[v.Handle] = v.Habit
+	}
+	for _, entry := range strings.Split(raw, ",") {
+		handle, secret, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		k, err := near.ParseSecretKey(secret)
+		if err != nil {
+			return nil, fmt.Errorf("HAAT_VILLAGERS: %w", err)
+		}
+		id := handle + "." + rootID
+		out = append(out, &world.Villager{
+			Player: &players.Player{AccountID: id, Name: players.DisplayName(id), Play: k},
+			Habit:  habits[handle],
+		})
+	}
+	return out, nil
 }

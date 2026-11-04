@@ -107,6 +107,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /ledger/reveal", s.reveal)
 	mux.HandleFunc("POST /ledger/forget", s.forget)
 	mux.HandleFunc("GET /market", s.marketPage)
+	mux.HandleFunc("POST /fast-forward", s.fastForward)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
 	return securityHeaders(mux)
 }
@@ -148,7 +149,7 @@ func (s *Server) snapshot(ctx context.Context, fresh bool) (*snapshot, error) {
 			cErr = err
 			return
 		}
-		snap.Chronicle, cErr = s.Market.Chronicle(ctx, max(n-12, 0), 12)
+		snap.Chronicle, cErr = s.Market.Chronicle(ctx, max(n-60, 0), 60)
 	}()
 	wg.Wait()
 	if err := errors.Join(wErr, mErr, cErr); err != nil {
@@ -580,4 +581,19 @@ func (s *Server) marketPage(w http.ResponseWriter, r *http.Request) {
 	data.Stalls = s.buildStalls(snap, nil)
 	data.Dash = buildDashboard(snap, append(hist, today))
 	s.render(w, "market", data)
+}
+
+// fastForward starts a week of back-to-back trading.
+func (s *Server) fastForward(w http.ResponseWriter, r *http.Request) {
+	switch err := s.Keeper.StartFastForward(7); {
+	case errors.Is(err, world.ErrCapped):
+		setFlash(w, "err", "The village has already fast-forwarded this hour, to keep the shared demo affordable. Run it locally with `make localnet` for as many weeks as you like.")
+	case errors.Is(err, world.ErrBusy):
+		setFlash(w, "ok", "A fast-forward is already running. Watch the charts move.")
+	case err != nil:
+		setFlash(w, "err", friendlyError(err))
+	default:
+		setFlash(w, "ok", "Fast-forward started: a week of trading with the villagers. The page refreshes as each day ends.")
+	}
+	http.Redirect(w, r, "/market", http.StatusSeeOther)
 }

@@ -5,6 +5,8 @@ package world
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -26,9 +28,13 @@ type FeedItem struct {
 
 // Keeper runs the clock and the shopkeeper agents.
 type Keeper struct {
-	Root   *near.Account
-	Market *market.Client
-	Agents []*merchant.Agent
+	Root      *near.Account
+	Market    *market.Client
+	Agents    []*merchant.Agent
+	Relayer   *near.Relayer
+	Villagers []*Villager
+	// FastForwardsPerHour caps fast-forward runs, to keep testnet spend low.
+	FastForwardsPerHour int
 
 	DayLength   time.Duration // real time per game day
 	ReviewEvery time.Duration // routine shop reviews while players are around
@@ -42,6 +48,19 @@ type Keeper struct {
 	nudged     map[string]time.Time
 	dayLock    sync.Mutex // held while a day changes or a fast-forward runs
 	day        int
+	closed     map[string]bool // shops closed at the end of the previous day
+	ff         FastForward
+	ffRuns     []time.Time
+}
+
+// FastForward is the state of a fast-forward run, for the progress display.
+type FastForward struct {
+	Running   bool
+	Day, Of   int
+	StartDay  int
+	StartedAt time.Time
+	Took      time.Duration
+	Err       string
 }
 
 // Touch records player activity, which keeps the clock running.
@@ -159,7 +178,12 @@ func (k *Keeper) tick(ctx context.Context) {
 
 	switch {
 	case dayDue:
-		if err := k.EndDay(ctx); err != nil {
+		if !k.dayLock.TryLock() {
+			return // a fast-forward is running
+		}
+		err := k.endDayLocked(ctx)
+		k.dayLock.Unlock()
+		if err != nil {
 			log.Printf("end of day: %v", err)
 		}
 		k.mu.Lock()
@@ -224,6 +248,7 @@ func (k *Keeper) EndDay(ctx context.Context) error {
 }
 
 func (k *Keeper) endDayLocked(ctx context.Context) error {
+	k.villagersRound(ctx)
 	var wg sync.WaitGroup
 	for _, a := range k.Agents {
 		wg.Add(1)
@@ -244,6 +269,15 @@ func (k *Keeper) endDayLocked(ctx context.Context) error {
 		return err
 	}
 	k.refreshDay(ctx)
+	if shops, err := k.Market.Merchants(ctx); err == nil {
+		closed := map[string]bool{}
+		for _, m := range shops {
+			closed[m.AccountID] = !m.Open
+		}
+		k.mu.Lock()
+		k.closed = closed
+		k.mu.Unlock()
+	}
 	w, err := k.Market.World(ctx)
 	if err == nil {
 		text := "A new day begins. " + SeasonLabel(w.Season) + "."
@@ -272,3 +306,120 @@ func SeasonLabel(s string) string {
 	}
 	return s
 }
+
+// villagersRound lets every villager play its day, in parallel.
+func (k *Keeper) villagersRound(ctx context.Context) {
+	if len(k.Villagers) == 0 || k.Relayer == nil {
+		return
+	}
+	w, err := k.Market.World(ctx)
+	if err != nil {
+		return
+	}
+	shops, err := k.Market.Merchants(ctx)
+	if err != nil {
+		return
+	}
+	k.mu.Lock()
+	closedBefore := map[string]bool{}
+	for id, c := range k.closed {
+		closedBefore[id] = c
+	}
+	k.mu.Unlock()
+	base := View{World: w, Shops: shops, ClosedBefore: closedBefore, Day: w.Day}
+	var wg sync.WaitGroup
+	for _, v := range k.Villagers {
+		wg.Add(1)
+		go func(v *Villager) {
+			defer wg.Done()
+			text, hash, err := v.Act(ctx, k.Relayer, k.Market, base)
+			if err != nil {
+				log.Printf("villager %s: %v", v.Player.Name, err)
+				return
+			}
+			k.Record(FeedItem{Who: v.Player.Name, Text: text, TxHash: hash})
+		}(v)
+	}
+	wg.Wait()
+}
+
+// StartFastForward runs `days` game days back to back in the background.
+// It refuses when a run is already going or the hourly cap is reached.
+func (k *Keeper) StartFastForward(days int) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.ff.Running {
+		return ErrBusy
+	}
+	cut := time.Now().Add(-time.Hour)
+	kept := k.ffRuns[:0]
+	for _, t := range k.ffRuns {
+		if t.After(cut) {
+			kept = append(kept, t)
+		}
+	}
+	k.ffRuns = kept
+	if k.FastForwardsPerHour > 0 && len(k.ffRuns) >= k.FastForwardsPerHour {
+		return ErrCapped
+	}
+	k.ffRuns = append(k.ffRuns, time.Now())
+	k.ff = FastForward{Running: true, Of: days, StartDay: k.day, StartedAt: time.Now()}
+	k.lastActive = time.Now()
+	go k.runFastForward(days)
+	return nil
+}
+
+func (k *Keeper) runFastForward(days int) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+	k.dayLock.Lock()
+	defer k.dayLock.Unlock()
+	k.Record(FeedItem{Who: "The village", Text: fmt.Sprintf("Fast-forward: %d days of trading begin.", days)})
+	var err error
+	for d := 1; d <= days && err == nil; d++ {
+		k.mu.Lock()
+		k.ff.Day = d
+		k.mu.Unlock()
+		err = k.endDayLocked(ctx)
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.ff.Running = false
+	k.ff.Took = time.Since(k.ff.StartedAt)
+	if err != nil {
+		k.ff.Err = err.Error()
+		log.Printf("fast-forward: %v", err)
+	}
+	k.nextDay = time.Now().Add(k.DayLength)
+	k.lastActive = time.Now()
+}
+
+// FastForwardState returns the current or last fast-forward run.
+func (k *Keeper) FastForwardState() FastForward {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.ff
+}
+
+// FastForwardsLeft is how many runs the hourly cap still allows.
+func (k *Keeper) FastForwardsLeft() int {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.FastForwardsPerHour <= 0 {
+		return 99
+	}
+	n := 0
+	for _, t := range k.ffRuns {
+		if time.Since(t) < time.Hour {
+			n++
+		}
+	}
+	return max(k.FastForwardsPerHour-n, 0)
+}
+
+var (
+	// ErrBusy means a fast-forward is already running.
+	ErrBusy = errors.New("a fast-forward is already running")
+	// ErrCapped means the hourly fast-forward cap is reached.
+	ErrCapped = errors.New("the village has fast-forwarded enough this hour")
+)

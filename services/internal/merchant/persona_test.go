@@ -151,3 +151,23 @@ func TestExplainBid(t *testing.T) {
 		t.Fatalf("got %q", a.Headline)
 	}
 }
+
+func TestMeenaTurnsCarefulWithInvestors(t *testing.T) {
+	spec, _ := ByKey("meena")
+	m := shop("meena", 900, map[string]int64{"chilli": 30, "pickle": 3})
+	bold := Decide(Situation{Spec: spec, Shop: m, World: world("garmi", false)})
+	m.SharesIssued = 120
+	careful := Decide(Situation{Spec: spec, Shop: m, World: world("garmi", false)})
+	if careful.Policies[0].MarginBps <= bold.Policies[0].MarginBps || careful.Policies[0].TargetStock >= bold.Policies[0].TargetStock {
+		t.Fatalf("with investors Meena should widen her margin and lower her targets: bold %+v careful %+v", bold.Policies, careful.Policies)
+	}
+	if careful.CitySell["chilli"] == 0 || !strings.Contains(careful.Note, "investors") {
+		t.Fatalf("careful Meena sells extra stock to the city and says why: %+v %q", careful.CitySell, careful.Note)
+	}
+	// A full cash box makes her bold again.
+	m.Kauri = market.U128(2*spec.OpeningKauri + 1)
+	again := Decide(Situation{Spec: spec, Shop: m, World: world("garmi", false)})
+	if again.Policies[0].MarginBps != 600 {
+		t.Fatal("rich Meena is bold again")
+	}
+}

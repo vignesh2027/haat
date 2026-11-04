@@ -1,4 +1,4 @@
-.PHONY: all contract build test test-unit test-contract test-sandbox test-go bootstrap smoke status serve clean
+.PHONY: all contract build test test-unit test-contract test-sandbox test-go bootstrap smoke status serve localnet localnet-reset fast-forward clean
 
 WASM := contract/target/near/haat_market.wasm
 
@@ -41,6 +41,18 @@ status: build
 ## Run the web game, the day clock and the shopkeeper agents.
 serve: build
 	./bin/haat serve
+
+## Run the whole game on a local NEAR node (near-sandbox): no testnet account, no faucet.
+localnet: contract build
+	./bin/haat -env .localnet/env localnet
+
+## Wipe the local chain and its accounts.
+localnet-reset: build
+	./bin/haat -env .localnet/env localnet reset
+
+## Play a week back to back against the running local node and print what happened.
+fast-forward: build
+	./bin/haat -env .localnet/env fast-forward
 
 clean:
 	rm -rf bin contract/target

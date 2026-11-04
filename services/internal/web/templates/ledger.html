@@ -5,7 +5,7 @@
     <h1>{{.Player.Name}}'s account</h1>
     <p class="lead">You have been playing on a real NEAR {{.Network}} account. Everything in your basket and purse lives there, as tokens in the market contract.</p>
     <dl class="facts">
-      <dt>Account</dt><dd><code>{{.Player.Account}}</code> <a href="{{acct .Player.Account}}" target="_blank" rel="noopener">view on the explorer</a></dd>
+      <dt>Account</dt><dd><code>{{.Player.Account}}</code>{{if .Explorer}} <a href="{{acct .Player.Account}}" target="_blank" rel="noopener">view on the explorer</a>{{end}}</dd>
       <dt>Purse</dt><dd>🐚 {{num .Player.Purse}} kauri</dd>
       <dt>Market contract</dt><dd><code>{{.Contract}}</code></dd>
     </dl>

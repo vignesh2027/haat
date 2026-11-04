@@ -8,6 +8,16 @@
     </div>
   </div>
 
+  <div class="dash-ff">  <section class="card ffcard">
+    <h2>Fast-forward a week</h2>
+    <p class="sub">Seven days of trading back to back, about a minute. Villagers gather and trade, shopkeepers decide, floods come and go.</p>
+    {{if .FF.Running}}<p><b>Running: day {{.FF.Day}} of {{.FF.Of}}.</b></p>
+    {{else if gt .FFLeft 0}}<form method="post" action="/fast-forward"><button class="btn btn-violet">⏩ Fast-forward 7 days</button></form>
+    {{else}}<p class="muted small">Already used this hour on the shared demo. Locally, <code>make localnet</code> has no limit.</p>{{end}}
+    {{if and (not .FF.Running) .FF.Took}}<p class="muted small">Last run: {{.FF.Of}} days in {{ffsecs .FF}} seconds.</p>{{end}}
+  </section>
+  </div>
+
   <div class="kpis">
     <div class="kpi"><span>Day</span><b>{{.World.Day}}</b><small>{{.Season}}</small></div>
     <div class="kpi"><span>Players</span><b>{{.World.Players}}</b><small>accounts in the village</small></div>

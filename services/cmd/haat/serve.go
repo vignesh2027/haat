@@ -41,6 +41,14 @@ func (a *app) keeper() (*world.Keeper, *near.Account, *market.Client, error) {
 		ReviewEvery: a.minutes("HAAT_REVIEW_MINUTES", 6),
 		IdleAfter:   a.minutes("HAAT_IDLE_MINUTES", 30),
 	}
+	k.Relayer = near.NewRelayer(root, marketID)
+	if k.Villagers, err = a.villagers(root.ID); err != nil {
+		return nil, nil, nil, err
+	}
+	k.FastForwardsPerHour = 1
+	if n, err := strconv.Atoi(a.env.Get("HAAT_FF_PER_HOUR")); err == nil && n >= 0 {
+		k.FastForwardsPerHour = n
+	}
 	for _, spec := range merchant.Roster {
 		acct, err := a.merchantAccount(spec, root.ID)
 		if err != nil {
@@ -65,13 +73,16 @@ func (a *app) serve(ctx context.Context) error {
 		return err
 	}
 	srv.Root, srv.Market, srv.Keeper = root, mc, k
-	srv.Relayer = near.NewRelayer(root, mc.Contract)
+	srv.Relayer = k.Relayer
 	srv.Voice = merchant.NewVoice(a.env.Get("GROQ_API_KEY"))
 	if m := a.env.Get("HAAT_VOICE_MODEL"); m != "" {
 		srv.Voice.Model = m
 	}
-	srv.Explorer = a.env.Or("NEAR_EXPLORER_URL", "https://testnet.nearblocks.io")
 	srv.Network = a.env.Or("NEAR_NETWORK", "testnet")
+	srv.Explorer = a.env.Or("NEAR_EXPLORER_URL", "https://testnet.nearblocks.io")
+	if srv.Network == "localnet" {
+		srv.Explorer = a.env.Get("NEAR_EXPLORER_URL") // no public explorer for a local node
+	}
 	if n, err := strconv.Atoi(a.env.Get("HAAT_MAX_NEW_PLAYERS_PER_HOUR")); err == nil && n > 0 {
 		srv.MaxNewPlayersPerHour = n
 	}
@@ -113,4 +124,43 @@ func (a *app) tick(ctx context.Context, endDay bool) error {
 		fmt.Printf("%s: %s%s %s\n", it.Who, it.Text, mark, a.explorer(it.TxHash))
 	}
 	return nil
+}
+
+// fastForward plays a week from the command line and prints what happened.
+func (a *app) fastForward(ctx context.Context) error {
+	k, _, mc, err := a.keeper()
+	if err != nil {
+		return err
+	}
+	days := 7
+	if n, err := strconv.Atoi(a.env.Get("HAAT_FF_DAYS")); err == nil && n > 0 {
+		days = n
+	}
+	k.FastForwardsPerHour = 0
+	start := time.Now()
+	if err := k.StartFastForward(days); err != nil {
+		return err
+	}
+	for k.FastForwardState().Running {
+		time.Sleep(time.Second)
+	}
+	st := k.FastForwardState()
+	for i := len(k.Feed(500)) - 1; i >= 0; i-- {
+		it := k.Feed(500)[i]
+		fmt.Printf("day %2d  %-13s %s\n", it.Day, it.Who, it.Text)
+	}
+	if st.Err != "" {
+		return fmt.Errorf("fast-forward stopped: %s", st.Err)
+	}
+	fmt.Printf("\n%d days in %s\n", days, time.Since(start).Round(time.Second))
+	n, _ := mc.ChronicleLen(ctx)
+	entries, _ := mc.Chronicle(ctx, max(n-30, 0), 30)
+	for _, e := range entries {
+		who := ""
+		if e.MerchantID != nil {
+			who = *e.MerchantID
+		}
+		fmt.Printf("chronicle day %2d %-14s %s\n", e.Day, e.Kind, who)
+	}
+	return a.status(ctx)
 }

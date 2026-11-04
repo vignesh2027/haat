@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{css}}">
+{{if .FF.Running}}<meta http-equiv="refresh" content="4">{{end}}
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐚</text></svg>">
 </head>
 <body class="page-{{.Page}}{{if .World.Flood}} is-flood{{end}} season-{{.World.Season}}">
@@ -39,13 +40,14 @@
 
 {{with .Flash}}<div class="toast toast-{{.Kind}}" role="status">{{.Text}}</div>{{end}}
 
+{{if .FF.Running}}<div class="ffbar" role="status"><b>Fast-forward</b> day {{.FF.Day}} of {{.FF.Of}}: villagers trade, shopkeepers decide, the calendar turns.<span class="ffbar-track"><i style="width: {{ffpct .FF}}%"></i></span></div>{{end}}
 <main class="main">
 {{template "main" .}}
 </main>
 
 <footer class="footer">
   <p>Every item, kauri and share is a NEP-245 token on NEAR {{.Network}}, in the
-  <a href="{{acct .Contract}}" rel="noopener" target="_blank">market contract</a>.
+  {{if .Explorer}}<a href="{{acct .Contract}}" rel="noopener" target="_blank">market contract</a>{{else}}market contract <code>{{.Contract}}</code>{{end}}.
   Shopkeepers sign their own decisions from their own accounts. Gas is paid by the village, so you never see it.</p>
 </footer>
 

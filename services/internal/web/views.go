@@ -34,6 +34,8 @@ type pageData struct {
 	Reveal    *revealVM
 	Dash      *dashboard
 	VoiceOn   bool
+	FF        world.FastForward
+	FFLeft    int
 }
 
 type playerVM struct {
@@ -119,13 +121,6 @@ var places = []struct{ Place, Name, Emoji, Item string }{
 	{"garden", "Chilli garden", "🪴", "chilli"},
 }
 
-// Yields per season, mirroring contract/src/world.rs (shown to players as a range).
-var yields = map[string]map[string]int{
-	"garmi":   {"mango": 3, "rice": 1, "fish": 1, "chilli": 2},
-	"barsaat": {"mango": 0, "rice": 1, "fish": 3, "chilli": 0},
-	"tyohar":  {"mango": 1, "rice": 3, "fish": 2, "chilli": 2},
-}
-
 func placeItem(place string) string {
 	for _, p := range places {
 		if p.Place == place {
@@ -167,6 +162,7 @@ func (s *Server) basePage(snap *snapshot, f *flash) pageData {
 		d.Weather = "⛈️"
 	}
 	if s.Keeper != nil {
+		d.FF, d.FFLeft = s.Keeper.FastForwardState(), s.Keeper.FastForwardsLeft()
 		d.Awake = s.Keeper.Awake()
 		mins := int(math.Ceil(s.Keeper.NextDayIn().Minutes()))
 		d.NextDay = fmt.Sprintf("%d min", max(mins, 1))
@@ -175,7 +171,7 @@ func (s *Server) basePage(snap *snapshot, f *flash) pageData {
 		}
 	}
 	for _, p := range places {
-		y := yields[w.Season][p.Item]
+		y := market.BaseYield(w.Season, p.Item)
 		pv := placeVM{Place: p.Place, Name: p.Name, Emoji: p.Emoji, Item: p.Item, ItemEmoji: itemEmoji[p.Item]}
 		if y == 0 {
 			pv.Barren, pv.Yield = true, "nothing this season"
@@ -207,7 +203,12 @@ func (s *Server) basePage(snap *snapshot, f *flash) pageData {
 	for _, m := range snap.Merchants {
 		names[m.AccountID] = m.Name
 	}
-	for i := len(snap.Chronicle) - 1; i >= 0; i-- {
+	// Newest first; daily dividends are left to the feed so that bankruptcies,
+	// rescues, floods and seasons stay visible.
+	for i := len(snap.Chronicle) - 1; i >= 0 && len(d.Chronicle) < 12; i-- {
+		if snap.Chronicle[i].Kind == "dividend" {
+			continue
+		}
 		if c, ok := chronicleLine(snap.Chronicle[i], names); ok {
 			d.Chronicle = append(d.Chronicle, c)
 		}
@@ -392,5 +393,12 @@ func funcs(s *Server) template.FuncMap {
 		},
 		"isLocal": func() bool { return s.Network == "localnet" },
 		"css":     func() string { return "/static/haat.css?v=" + cssVersion },
+		"ffpct": func(f world.FastForward) int {
+			if f.Of == 0 {
+				return 0
+			}
+			return (f.Day - 1) * 100 / f.Of
+		},
+		"ffsecs": func(f world.FastForward) int { return int(f.Took.Seconds()) },
 	}
 }

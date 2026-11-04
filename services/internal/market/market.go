@@ -341,3 +341,29 @@ func Play(moves ...Move) near.FunctionCall {
 	}
 	return near.CallArgs("play", map[string]any{"moves": moves}, g)
 }
+
+// Places and their items, mirroring contract/src/world.rs.
+var Places = []struct{ Place, Item string }{
+	{"grove", "mango"}, {"field", "rice"}, {"river", "fish"}, {"garden", "chilli"},
+}
+
+// PlaceFor returns the place that yields an item.
+func PlaceFor(item string) string {
+	for _, p := range Places {
+		if p.Item == item {
+			return p.Place
+		}
+	}
+	return ""
+}
+
+// BaseYield is the guaranteed yield of one gathering trip by season, mirroring
+// base_yield in contract/src/world.rs. A lucky trip gives one more.
+func BaseYield(season, item string) int64 {
+	t := map[string]map[string]int64{
+		"garmi":   {"mango": 3, "rice": 1, "fish": 1, "chilli": 2},
+		"barsaat": {"mango": 0, "rice": 1, "fish": 3, "chilli": 0},
+		"tyohar":  {"mango": 1, "rice": 3, "fish": 2, "chilli": 2},
+	}
+	return t[season][item]
+}

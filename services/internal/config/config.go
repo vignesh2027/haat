@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -78,6 +79,9 @@ func (e *Env) Set(key, value string) error {
 	b.WriteString("# Written by haat. Holds private keys: never commit or share this file.\n")
 	for _, k := range keys {
 		fmt.Fprintf(&b, "%s=%s\n", k, e.file[k])
+	}
+	if err := os.MkdirAll(filepath.Dir(e.path), 0o700); err != nil {
+		return err
 	}
 	return os.WriteFile(e.path, []byte(b.String()), 0o600)
 }
