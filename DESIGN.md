@@ -16,7 +16,7 @@ This document is the paper design written before any code. It covers the game lo
 
 1. Walk to a place at the edge of the village (mango grove, paddy field, river ghat, chilli garden) and gather. One tap spends one unit of energy and puts a few items in your basket. What you get depends on the season.
 2. Walk into the haat square. Every stall shows its price for each item and a small face showing the shopkeeper's mood.
-3. Hover a price. The tooltip says why, in plain words: "I already have 34 mangoes and the city pays 6 for one, so I can offer you 4."
+3. Hover a price. The tooltip says why, in plain words: "I already have 34 mangoes and the city pays 48 for one, so I can offer you 34."
 4. Sell, or buy, with one tap. Your purse of kauri (cowrie shells, the old village currency) updates.
 
 ### 5 minutes
@@ -44,11 +44,11 @@ All items and money are NEP-245 multi tokens held in one contract.
 | Token id | Shown as | Base city price (kauri) | Source |
 |---|---|---|---|
 | `kauri` | Kauri (cowrie shells), the money | 1 | starter purse, sales |
-| `mango` | Mango (aam) | 6 | mango grove |
-| `rice` | Rice (chawal) | 5 | paddy field |
-| `fish` | Fish (machli) | 7 | river ghat |
-| `chilli` | Chilli (mirchi) | 8 | chilli garden |
-| `pickle` | Pickle (achaar) | 30 | crafted: 2 mango and 1 chilli |
+| `mango` | Mango (aam) | 60 | mango grove |
+| `rice` | Rice (chawal) | 50 | paddy field |
+| `fish` | Fish (machli) | 70 | river ghat |
+| `chilli` | Chilli (mirchi) | 80 | chilli garden |
+| `pickle` | Pickle (achaar) | 300 | crafted: 2 mango and 1 chilli |
 | `share:<merchant>` | Shares in a shop | none | investing |
 
 ### Seasons
@@ -99,7 +99,7 @@ A multi-unit trade is priced one unit at a time, so every extra mango you dump o
 
 ### The shopkeeper's levers
 
-The contract computes prices, but each shopkeeper chooses its own levers per item by signing a `set_policy` transaction from its own account:
+The contract computes prices, but each shopkeeper chooses its own levers per item by signing a `set_policies` transaction from its own account:
 
 - `target_stock` (1 to 200): how much it wants to hold. A higher target means it pays more and asks less.
 - `margin_bps` (200 to 4000): its spread, from 2% to 40%.
@@ -116,11 +116,11 @@ Kauri enter the village through the starter purse for new players, opening purse
 
 ### Bankruptcy
 
-A shop is open while it holds at least 20 kauri. Below that it is closed: players cannot trade with it. The contract derives this from the balance, so no one can keep a broke shop open by decree. A closed shop can still sell stock to the city when the road is open, or be rescued by investors.
+A shop is open while it holds at least 200 kauri. Below that it is closed: players cannot trade with it. The contract derives this from the balance, so no one can keep a broke shop open by decree. A closed shop can still sell stock to the city when the road is open, or be rescued by investors.
 
 ### Investing and dividends
 
-- Shop value = kauri held plus stock at city prices, with a floor of 50.
+- Shop value = kauri held plus stock at city prices, with a floor of 500.
 - Every shop starts with 1,000 founder shares held by no one (they represent the shopkeeper's own stake and are never minted).
 - Investing `x` kauri mints `x x (founder shares + issued shares) / shop value` shares as the NEP-245 token `share:<merchant>`. Investing in a cheap, broke shop buys a large stake.
 - Once per game day the shopkeeper signs `settle_day`. If its purse grew since the last settlement (investments excluded), 50% of the profit times the investors' fraction of all shares is moved into a dividend pool.
@@ -155,15 +155,16 @@ One contract, `market.<root>.testnet`, Rust with near-sdk 5.
 |---|---|---|
 | `new(owner_id, world_seed)` | deployer | initialise |
 | `add_merchant(account_id, name, items, opening_kauri)` | owner | register a shop and mint its opening purse |
-| `register_player(account_id)` | owner | one-time starter purse of 40 kauri |
+| `register_player(account_id)` | owner | one-time starter purse of 400 kauri |
 | `advance_day()` | owner | next day, price snapshot for the dashboard, season and flood entries in the chronicle |
 | `gather(place)` | player | spend 1 energy, mint items by season |
 | `craft(recipe)` | anyone | burn inputs, mint output |
 | `sell(merchant_id, token_id, amount, min_total)` | player | items to shop, kauri to player |
 | `buy(merchant_id, token_id, amount, max_total)` | player | kauri to shop, items to player |
 | `invest(merchant_id, amount)` | player | kauri to shop, shares to player |
+| `play(moves)` | player | up to 10 of the moves above in one call; all or nothing |
 | `claim_dividends(merchant_id)` | shareholder | pay out accrued dividends |
-| `set_policy(token_id, target_stock, margin_bps, note)` | merchant itself | change its levers |
+| `set_policies(policies, note)` | merchant itself | change its levers for one or more items |
 | `city_sell(token_id, amount)` / `city_buy(token_id, amount)` | merchant itself | trade with the city cart |
 | `settle_day()` | merchant itself | once per day, fund dividends |
 
@@ -190,7 +191,7 @@ There is no seed phrase, wallet popup or gas prompt in the normal loop.
 
 1. First visit: the server generates two ed25519 key pairs and creates a named account such as `kavya-3f9a.<root>.testnet` in one transaction signed by the root account. The account gets a full access key (the player's recovery key) and a function-call access key limited to the market contract (the play key). The root account also calls `register_player` for the starter purse.
 2. Both private keys go into an encrypted, signed, HTTP-only cookie (AES-GCM with a server secret). The server keeps no database of player keys. It decrypts the play key only while signing a request.
-3. Every player action is a NEP-366 meta transaction: the play key signs a delegate action calling the market contract, and the root account (acting as relayer) wraps it in a transaction and pays the gas. The player account holds only the small balance needed for its own storage.
+3. Every player action is a NEP-366 meta transaction: the play key signs a delegate action calling the market contract, and the root account (acting as relayer) wraps it in a transaction and pays the gas. The player account holds only the small balance needed for its own storage. A function-call access key may sign only one action per transaction, so the player's moves are batched into a single `play(moves)` call.
 4. The relayer only accepts delegate actions whose sole receiver is the market contract and whose actions are no-deposit function calls, so it cannot be used to burn its gas on anything else.
 5. The "Your ledger" page states this honestly: it shows the account id, links to the explorer, and lets the player download the recovery key as a standard near-cli credentials file and take the account anywhere.
 
