@@ -16,7 +16,7 @@ This document is the paper design written before any code. It covers the game lo
 
 1. Walk to a place at the edge of the village (mango grove, paddy field, river ghat, chilli garden) and gather. One tap spends one unit of energy and puts a few items in your basket. What you get depends on the season.
 2. Walk into the haat square. Every stall shows its price for each item and a small face showing the shopkeeper's mood.
-3. Hover a price. The tooltip says why, in plain words: "I already have 34 mangoes and the city pays 48 for one, so I can offer you 34."
+3. Hover a price. The tooltip says why, in plain words: "I already have 34 mangoes and the city pays 48 for one, so I can offer you 31."
 4. Sell, or buy, with one tap. Your purse of kauri (cowrie shells, the old village currency) updates.
 
 ### 5 minutes
