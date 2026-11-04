@@ -249,18 +249,17 @@ func (k *Keeper) EndDay(ctx context.Context) error {
 
 func (k *Keeper) endDayLocked(ctx context.Context) error {
 	k.villagersRound(ctx)
+	// Each shopkeeper reviews its shop and closes its books in one transaction.
 	var wg sync.WaitGroup
 	for _, a := range k.Agents {
 		wg.Add(1)
 		go func(a *merchant.Agent) {
 			defer wg.Done()
-			act, err := a.Settle(ctx)
+			_, act, err := a.Evening(ctx)
 			if err != nil {
-				log.Printf("%s settle: %v", a.Spec.Key, err)
+				log.Printf("%s evening: %v", a.Spec.Key, err)
 			}
-			if act != nil && (act.Err != "" || act.Summary != "closed the books for the day") {
-				k.recordAction(act)
-			}
+			k.recordAction(act)
 		}(a)
 	}
 	wg.Wait()
@@ -286,11 +285,6 @@ func (k *Keeper) endDayLocked(ctx context.Context) error {
 		}
 		k.Record(FeedItem{Day: w.Day, Who: "The village", Text: text, TxHash: out.Hash})
 	}
-	ids := make([]string, len(k.Agents))
-	for i, a := range k.Agents {
-		ids[i] = a.Account.ID
-	}
-	k.reviewLocked(ctx, ids)
 	return nil
 }
 

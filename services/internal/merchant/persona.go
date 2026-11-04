@@ -67,6 +67,16 @@ func (s Situation) floodSoon(days int) bool {
 
 func (s Situation) roadOpen() bool { return !s.World.Flood }
 
+// seasonSoon reports whether the panchang shows a season starting within days.
+func (s Situation) seasonSoon(season string, days int) bool {
+	for i, f := range s.World.Forecast {
+		if i < days && f.Season == season {
+			return true
+		}
+	}
+	return false
+}
+
 // Decide applies the shopkeeper's temperament to the situation.
 func Decide(s Situation) Decision {
 	d := Decision{CitySell: map[string]int64{}, CityBuy: map[string]int64{}}
@@ -117,7 +127,7 @@ func decideRamu(s Situation, d *Decision) {
 func decideMeena(s Situation, d *Decision) {
 	cash := int64(s.Shop.Kauri)
 	// With investors watching she is careful, until a full cash box makes her bold again.
-	careful := s.Shop.SharesIssued > 0 && cash < 2*s.Spec.OpeningKauri
+	careful := s.Shop.SharesIssued > 0 && cash < s.Spec.OpeningKauri*3/2
 	for _, it := range s.Spec.Items {
 		target, margin := 30, 600
 		if it == "pickle" {
@@ -138,6 +148,22 @@ func decideMeena(s Situation, d *Decision) {
 		// Bold Meena keeps her stall full of chillies whatever the city charges.
 		if it == "chilli" && !careful && s.roadOpen() && stock < 8 && cash > 400 {
 			d.CityBuy[it] = 12
+		}
+	}
+	// Her big bets: chillies before the rains, pickle before Diwali. She spends
+	// her last kauri on them, which is how a bold shop goes broke.
+	if !careful && s.roadOpen() && s.Shop.Open {
+		switch {
+		case s.World.Season == "barsaat" || s.seasonSoon("barsaat", 2):
+			if s.Shop.StockOf("chilli") < 60 {
+				d.CityBuy["chilli"] = 50
+				d.Reasons = append(d.Reasons, "Rain is coming and chillies will be scarce. I am buying every chilli I can afford.")
+			}
+		case s.World.Season == "tyohar" || s.seasonSoon("tyohar", 2):
+			if s.Shop.StockOf("pickle") < 12 {
+				d.CityBuy["pickle"] = 12
+				d.Reasons = append(d.Reasons, "Diwali crowds will want pickle. I am filling my shelf whatever it costs.")
+			}
 		}
 	}
 	switch {

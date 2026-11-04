@@ -29,6 +29,16 @@ type Action struct {
 // with every change (city trades, crafting, new levers and note). It sends
 // nothing when nothing would change.
 func (a *Agent) Review(ctx context.Context) (Decision, *Action, error) {
+	return a.review(ctx, false)
+}
+
+// Evening is the end-of-day review: the same decisions, plus closing the
+// books for the day (settle_day) in the same transaction.
+func (a *Agent) Evening(ctx context.Context) (Decision, *Action, error) {
+	return a.review(ctx, true)
+}
+
+func (a *Agent) review(ctx context.Context, settle bool) (Decision, *Action, error) {
 	w, err := a.Market.World(ctx)
 	if err != nil {
 		return Decision{}, nil, err
@@ -48,17 +58,32 @@ func (a *Agent) Review(ctx context.Context) (Decision, *Action, error) {
 		return Decision{}, nil, fmt.Errorf("%s is not a shop in the market", a.Account.ID)
 	}
 	d := Decide(Situation{Spec: a.Spec, Shop: me, World: w})
-	if d.Empty(me) && d.Note == me.Note {
+	changed := !d.Empty(me) || d.Note != me.Note
+	if !changed && (!settle || me.SettledToday) {
 		return d, nil, nil
 	}
-	actions, summary := a.actionsFor(d)
+	var actions []near.Action
+	summary := ""
+	if changed {
+		actions, summary = a.actionsFor(d)
+	}
+	if settle && !me.SettledToday {
+		actions = append(actions, market.SettleDay())
+	}
 	out, err := a.Account.Send(ctx, a.Market.Contract, actions...)
 	act := &Action{Merchant: a.Spec.Name, Summary: summary}
 	if out != nil {
 		act.TxHash = out.Hash
+		var v market.U128
+		if settle && len(out.Value) > 0 && v.UnmarshalJSON(out.Value) == nil && v > 0 {
+			act.Summary = strings.TrimPrefix(summary+fmt.Sprintf(", paid %d kauri of dividends", v), ", ")
+		}
 	}
 	if err != nil {
 		act.Err = err.Error()
+	}
+	if act.Summary == "" {
+		return d, nil, err // a quiet evening: books closed, nothing else to say
 	}
 	return d, act, err
 }

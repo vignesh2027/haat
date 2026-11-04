@@ -96,6 +96,18 @@ func TestMeenaRestocksBoldly(t *testing.T) {
 	if poor.CityBuy["chilli"] == 0 {
 		t.Fatal("Meena spends her last kauri on chillies")
 	}
+	// Before the rains she bets nearly everything on chillies.
+	bet := decide("meena", 3000, map[string]int64{"chilli": 20, "pickle": 3}, world("garmi", false, false, false, true))
+	bet2 := Decide(Situation{Spec: Roster[1], Shop: shop("meena", 3000, map[string]int64{"chilli": 20, "pickle": 3}),
+		World: func() market.World {
+			w := world("garmi", false)
+			w.Forecast = []market.ForecastDay{{Day: 1, Season: "barsaat"}}
+			return w
+		}()})
+	if bet2.CityBuy["chilli"] == 0 || 3000-bet2.CityBuy["chilli"]*100 > 200 {
+		t.Fatalf("Meena should bet her purse on chillies before the monsoon: %v", bet2.CityBuy)
+	}
+	_ = bet
 }
 
 func TestSensibleShopsNeverBuyThemselvesClosed(t *testing.T) {
@@ -165,7 +177,7 @@ func TestMeenaTurnsCarefulWithInvestors(t *testing.T) {
 		t.Fatalf("careful Meena sells extra stock to the city and says why: %+v %q", careful.CitySell, careful.Note)
 	}
 	// A full cash box makes her bold again.
-	m.Kauri = market.U128(2*spec.OpeningKauri + 1)
+	m.Kauri = market.U128(spec.OpeningKauri*3/2 + 1)
 	again := Decide(Situation{Spec: spec, Shop: m, World: world("garmi", false)})
 	if again.Policies[0].MarginBps != 600 {
 		t.Fatal("rich Meena is bold again")
