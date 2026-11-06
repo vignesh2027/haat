@@ -18,7 +18,7 @@ This document started as the paper design written before any code, and has been 
 
 Sources: en.wikipedia.org/wiki/Haat_bazaar, registerkaro.in trademark search listings for "Pahari Haat" and "Uphaar Haat", coinmarketcap.com search for HAT tokens, and GitHub search. Before any commercial use, a formal trademark search in IP India and WIPO should be done; for a hackathon entry the name is clear to use.
 
-The logo is original: a scalloped market awning over a cowrie shell (kauri, the old village money), in the game's blue and violet. It shares no shapes or colours with NEAR's marks. Files: `services/internal/web/static/logo.svg` and `logo-512.png`.
+The logo is original: four kauri shells (cowries, the old village money), one for each shopkeeper, turning around an empty centre that stands for the market square. It is flat terracotta (#B4532A) and kauri cream (#FFF1DC) with burnt umber (#5C1F0B) apertures, the warmth of clay pots and cowries, and it shares no shapes or colours with NEAR's marks. A simplified drawing without the shell teeth is used below 48 px. Files: `services/internal/web/static/logo.svg`, `logo-512.png`, `apple-touch-icon.png`, `favicon.svg` and `favicon-32.png`.
 
 ## 2. The game loop
 
