@@ -467,6 +467,7 @@ func funcs(s *Server) template.FuncMap {
 		"isLocal": func() bool { return s.Network == "localnet" },
 		"lamps":   func(n int) []struct{} { return make([]struct{}, min(n, 5)) },
 		"css":     func() string { return "/static/haat.css?v=" + cssVersion },
+		"v3d":     func() string { return "/static/village3d.js?v=" + village3dVersion },
 		"ffpct": func(f world.FastForward) int {
 			if f.Of == 0 {
 				return 0

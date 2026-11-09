@@ -216,7 +216,7 @@ services/          Go, one binary "haat"
 deploy/            Modal app that runs the binary in one always-on container
 ```
 
-The browser gets HTML and CSS plus one small inline script that sends moves in the background and polls until they land.
+The browser gets HTML and CSS plus one small inline script that sends moves in the background and polls until they land. The 3D village (`static/village3d.js`, with Three.js r160 vendored under `static/vendor/`) is loaded only when someone opens it. It draws the square from `/village.json`, which the server builds from the same chain snapshot and view models as the pages, and every action in it is the page's own form, so it has no game logic of its own. Without WebGL it says so and points back to the 2D village.
 
 ## 9. Testing
 
@@ -229,4 +229,5 @@ The browser gets HTML and CSS plus one small inline script that sends moves in t
 ## 10. Not built
 
 - NEAR Intents (cashing kauri out) and social login.
-- An illustrated village map; the square uses cards and emoji.
+- An illustrated 2D village map; the 2D square uses cards and emoji, and the 3D village is the drawn view.
+- "View in AR" (WebXR) for the 3D village.

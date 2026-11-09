@@ -89,11 +89,16 @@ func New(cookieSecret string) (*Server, error) {
 }
 
 // cssVersion is a short hash of the stylesheet, so browsers reload it after a change.
-var cssVersion = func() string {
-	b, _ := assets.ReadFile("static/haat.css")
+var cssVersion = assetVersion("static/haat.css")
+
+// village3dVersion does the same for the 3D village script.
+var village3dVersion = assetVersion("static/village3d.js")
+
+func assetVersion(name string) string {
+	b, _ := assets.ReadFile(name)
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:4])
-}()
+}
 
 func (s *Server) parse() error {
 	s.pages = map[string]*template.Template{}
@@ -123,7 +128,7 @@ func (s *Server) Start(ctx context.Context) {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	static, _ := fs.Sub(assets, "static")
-	mux.Handle("GET /static/", http.StripPrefix("/static/", cacheFor(http.FileServerFS(static), 3600)))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", cacheFor(gzipStatic(static, http.FileServerFS(static)), 3600)))
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("POST /start", s.start)
 	mux.HandleFunc("POST /act", s.act)
@@ -132,6 +137,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /ledger/reveal", s.reveal)
 	mux.HandleFunc("POST /ledger/forget", s.forget)
 	mux.HandleFunc("GET /market", s.marketPage)
+	mux.HandleFunc("GET /village.json", s.villageJSON)
 	mux.HandleFunc("POST /fast-forward", s.fastForward)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
 	return securityHeaders(mux)

@@ -9,13 +9,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{css}}">
-{{if .FF.Running}}<meta http-equiv="refresh" content="6">{{end}}
+{{if .FF.Running}}<noscript><meta http-equiv="refresh" content="6"></noscript>{{end}}
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
 <link rel="icon" type="image/png" sizes="512x512" href="/static/logo-512.png">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 </head>
-<body class="page-{{.Page}}{{if .World.Flood}} is-flood{{end}} season-{{.World.Season}}" data-pending="{{.Pending}}">
+<body class="page-{{.Page}}{{if .World.Flood}} is-flood{{end}} season-{{.World.Season}}" data-pending="{{.Pending}}" data-day="{{.World.Day}}"{{if .FF.Running}} data-ff="1"{{end}}>
 <a id="top"></a>
 <header class="topbar">
   <a class="brand" href="/"><img class="brand-logo" src="/static/logo.svg" alt="" width="34" height="34"><span class="brand-word">Haat</span></a>
@@ -29,6 +29,7 @@
     <a href="/" {{if eq .Page "village"}}aria-current="page"{{end}}>Village</a>
     <a href="/market" {{if eq .Page "market"}}aria-current="page"{{end}}>Market</a>
     {{if .Player}}<a href="/ledger" {{if eq .Page "ledger"}}aria-current="page"{{end}}>Your ledger</a>{{end}}
+    <a href="/#3d" class="nav-3d" data-v3d hidden>3D village</a>
   </nav>
   {{if and .Player (ne .Page "market")}}
   <div class="purse" aria-label="Your purse">
@@ -63,7 +64,9 @@
   var body=document.body, chip=document.getElementById("onway"), text=document.getElementById("onway-text"), polling=false;
   function show(n,msg){ if(n>0){chip.hidden=false;text.textContent=(msg?msg+". ":"")+n+(n==1?" move":" moves")+" on the way";} else chip.hidden=true; }
   function toast(kind,msg){ var t=document.createElement("div"); t.className="toast toast-"+kind+" toast-float"; t.textContent=msg; body.appendChild(t); setTimeout(function(){t.remove();},4000); }
-  function poll(){ if(polling)return; polling=true; (function tick(){ fetch("/pending",{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){ if(j.pending>0){show(j.pending);setTimeout(tick,800);} else {location.reload();} }).catch(function(){setTimeout(tick,2000);}); })(); }
+  // The 3D village, when open, refreshes the page in place instead of reloading it.
+  function refresh(){ if(window.haatRefresh) window.haatRefresh(); else location.reload(); }
+  function poll(){ if(polling)return; polling=true; (function tick(){ fetch("/pending",{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){ if(j.pending>0){show(j.pending);setTimeout(tick,800);} else {polling=false;refresh();} }).catch(function(){setTimeout(tick,2000);}); })(); }
   function bump(f){ var k=f.querySelector("[name=kind]"), tok=f.querySelector("[name=token]"); var amt=f._amount||1;
     if(k&&k.value=="gather"){ var on=document.querySelectorAll(".energy i.on"); if(on.length) on[on.length-1].className=""; }
     if(k&&k.value=="sell"&&tok){ var b=document.querySelector('.basket-list [data-token="'+tok.value+'"] b'); if(b) b.textContent=Math.max(0,parseInt(b.textContent,10)-amt); } }
@@ -83,6 +86,16 @@
     if(f.dataset.busy)return; f.dataset.busy=1; body.classList.add("is-busy");
   });
   if(parseInt(body.dataset.pending||"0",10)>0){show(parseInt(body.dataset.pending,10));poll();}
+  if(body.dataset.ff){ setTimeout(refresh,6000); }
+  // The 3D village is loaded only when it is opened (#3d in the address).
+  var v3d=null, load3d=null;
+  try { if(window.WebGLRenderingContext&&window.fetch) load3d=new Function("u","return import(u)"); } catch(e){}
+  function sync3d(e){
+    if(!load3d||location.hash.indexOf("#3d")!==0){ if(v3d) v3d.then(function(m){m.close();}); return; }
+    if(!v3d) v3d=load3d({{v3d}});
+    v3d.then(function(m){m.open(!!e);}).catch(function(){ v3d=null; history.replaceState(null,"",location.pathname); toast("err","The 3D village could not load here. Everything is in the village below."); });
+  }
+  if(load3d){ document.querySelectorAll("[data-v3d]").forEach(function(el){el.hidden=false;}); addEventListener("hashchange",sync3d); sync3d(); }
 })();
 </script>
 </body>

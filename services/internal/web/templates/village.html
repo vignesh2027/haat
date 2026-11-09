@@ -57,8 +57,11 @@
 
 <section class="square" aria-label="The haat square">
   <div class="square-head">
-    <h1>The haat square</h1>
-    <p class="sub">Hover or tap a price to hear how the shopkeeper set it.</p>
+    <div>
+      <h1>The haat square</h1>
+      <p class="sub">Hover or tap a price to hear how the shopkeeper set it.</p>
+    </div>
+    <a class="btn btn-violet btn-3d" href="#3d" data-v3d hidden><svg class="btn-3d-cube" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5 18 6v8l-8 4.5L2 14V6z" fill="currentColor" opacity=".25"/><path d="M10 1.5 18 6l-8 4.5L2 6z" fill="currentColor" opacity=".9"/><path d="M10 10.5V18.5L2 14V6z" fill="currentColor" opacity=".55"/></svg>See it in 3D</a>
   </div>
   <div class="stalls">
     {{range .Stalls}}{{$stall0 := .}}

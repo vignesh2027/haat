@@ -14,6 +14,8 @@ A village market game on NEAR, for the Games With Real Economies track. Four sho
 2. **Watch an agent decide.** Open "How Meena Didi decided lately" on her stall: her note, what her rule book suggested, what she chose, and the transaction she signed from her own account.
 3. **Fast-forward.** Press "1 day" until bold Meena goes broke (usually a day or two), rescue her with Invest, then "Fast-forward 7 days" into the monsoon floods and watch the market dashboard, the chronicle and your lamp on the leaderboard.
 
+Then press **3D village**: the same square drawn from the chain, with live prices on the stalls, shutters on a broke shop, monsoon rain and a flooded road, and a tap on any stall to trade.
+
 `make story` checks those beats automatically: it plays a seeded week on a private node and asserts that Meena goes broke and is rescued, the prudent shops never close, and Bashir comes out of the floods ahead.
 
 ## Run it locally (no testnet account needed)
@@ -67,7 +69,7 @@ services/                 Go, one binary "haat"
   internal/market         typed client for the contract
   internal/merchant       shopkeeper personas, rule books, the model "brain", the agent loop
   internal/world          day clock, villagers, fast-forward, storage watchdog
-  internal/web            server-rendered pages (html/template), move queue, limits, SVG charts
+  internal/web            server-rendered pages (html/template), the 3D village, move queue, limits, SVG charts
   cmd/haat                bootstrap, serve, localnet, fast-forward, smoke, status, reset-market
 deploy/                   Modal app that runs the binary in one always-on container
 ```
