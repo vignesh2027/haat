@@ -45,7 +45,7 @@ make test        # also deploys the contract to a local near-sandbox, plays real
 make story       # plays the seeded week on a private local node and checks the story beats (about 30 s)
 ```
 
-The contract tests include regression tests for every economic finding of the independent review in [REVIEW.md](REVIEW.md): a buy-then-sell round trip can never profit (plus a property test over many shelves), dividends come only from new highs, late investors do not share earlier profit, and a kauri transfer opens or closes a shop at once.
+The contract tests include regression tests for every economic issue found in review: a buy-then-sell round trip can never profit (plus a property test over many shelves), dividends come only from new highs, late investors do not share earlier profit, and a kauri transfer opens or closes a shop at once.
 
 ## Run it on NEAR testnet
 

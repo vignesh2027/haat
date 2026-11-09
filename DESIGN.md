@@ -220,29 +220,13 @@ The browser gets HTML and CSS plus one small inline script that sends moves in t
 
 ## 9. Testing
 
-- `cargo test --lib`: pricing, seasons, gathering, trades, bankruptcy, investment and dividends, NEP-245 transfers, events and metadata, storage registration, history limits, leaderboard, and regression tests for every economic finding of the independent review.
+- `cargo test --lib`: pricing, seasons, gathering, trades, bankruptcy, investment and dividends, NEP-245 transfers, events and metadata, storage registration, history limits, leaderboard, and regression tests for every economic issue found in review.
 - `cargo test --test sandbox`: deploys the compiled contract to a local near-sandbox and plays real transactions, including the `mt_transfer_call` refund path.
 - `go test ./...`: borsh layouts, signing, meta transactions, relayer policy, rule books, model answer validation and spending guards, villager plans, the move queue, limits, cookies and page rendering.
 - `make story` plays a seeded week (floods on days 7, 8 and 10) on a private local node with the rule books and asserts the story: Meena goes broke and is rescued, Ramu, Bashir and Lakshmi never close, and Bashir's purse ends the week above where it started.
 - `make localnet` and `make fast-forward` run the whole game on a local node.
 
-## 10. Demo video script (2 minutes)
-
-| Time | On screen | Voice-over |
-|---|---|---|
-| 0:00 | The welcome page, logo, four stalls | "This is Haat, a village market. Every shopkeeper here is an agent with its own wallet." |
-| 0:10 | Enter, tap the mango grove three times, basket fills | "No sign-up, no wallet, no gas. I just play." |
-| 0:20 | Hover Ramu Kaka's mango price | "Every price explains itself, from the rules on chain." |
-| 0:30 | Sell ten mangoes, price drops unit by unit | "Flood a stall and its price falls." |
-| 0:40 | Open "How Meena Didi decided lately" | "Meena thinks for herself with an open model, inside limits the contract enforces, and signs her own decisions." |
-| 0:55 | Panchang shows rain | "The almanac says the monsoon is coming. Bashir prepares. Meena bets." |
-| 1:05 | Fast-forward, dashboard moves | "A week of trading in seconds. The road floods, the city cart stops." |
-| 1:20 | Meena's shutters, chronicle | "Meena bet everything and went broke." |
-| 1:30 | Invest, shop reopens, dividend next day, a lamp on the leaderboard | "I rescue her shop and earn from her recovery." |
-| 1:45 | Your ledger, explorer with real transactions | "Every item is a NEP-245 token and every move a real NEAR transaction." |
-| 1:55 | Logo | "Haat. A market that runs itself." |
-
-## 11. Not built
+## 10. Not built
 
 - NEAR Intents (cashing kauri out) and social login.
 - An illustrated village map; the square uses cards and emoji.
