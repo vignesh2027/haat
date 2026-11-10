@@ -125,6 +125,18 @@ This is a testnet game and the operator has real powers, stated plainly:
 - near-sandbox has no build for Intel Macs; use testnet there.
 - The hosted demo shares one village; fast-forward is capped per hour there to keep testnet spend low.
 
+## Built with
+
+- Contract: Rust, near-sdk 5 and near-contract-standards, built with cargo-near; local runs use near-sandbox.
+- Server and NEAR client: Go standard library only.
+- The 3D village: Three.js r160 (MIT), vendored in the repo.
+- Shopkeepers can think with an open model on Groq when `GROQ_API_KEY` is set; without it they use their rule books.
+- Much of the code was written with AI coding assistants (Claude Code) under my direction, during the hackathon window. The contract tests, the Go tests and `make story` check it.
+
+## Also by me for this hackathon
+
+[Mergoshi](https://github.com/vignesh2027/mergoshi), a memecoin that only mints when code ships (memecoins track). The two projects are independent. They share only a small Go NEAR client (base58, keys, transaction signing and RPC) that I copied from one repo to the other.
+
 ## License
 
 MIT
