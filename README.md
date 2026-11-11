@@ -4,7 +4,13 @@
 
 A village market game on NEAR, for the Games With Real Economies track. Four shopkeepers are agents with their own NEAR accounts; prices move with stock and the monsoon; a bold shop goes broke and you can rescue it for a share of its profits. Every item, coin and share is a NEP-245 token, every move is a real transaction, and players never see a wallet, a key or a gas fee.
 
-**Play now:** https://applemacbook6sep2004--haat-web.us-east.modal.run (NEAR testnet, one shared village)
+**Play now:** https://haat.140-245-16-129.sslip.io (NEAR testnet, one shared village)
+
+**Demo video:** https://youtu.be/fxmxD8VAd-0
+
+Music: "Vadodora Chill Mix" Kevin MacLeod (incompetech.com)<br>
+Licensed under Creative Commons: By Attribution 4.0 License<br>
+http://creativecommons.org/licenses/by/4.0/
 
 **Run it yourself in one command** (local NEAR node, no account needed): `make localnet`, then open http://localhost:8080
 
@@ -58,7 +64,7 @@ make serve        # the web game on http://localhost:8080
 make status       # the day, every shop's prices and purse, and NEAR balances
 ```
 
-`bootstrap` needs no login: it asks `helper.nearprotocol.com` for a fresh `haat-xxxxxx.testnet` account and writes the account ids and keys it creates to `.env`, which is gitignored. If the helper is down or rate-limited, use `make localnet` instead. `make deploy` hosts the game on Modal (see [deploy/modal_app.py](deploy/modal_app.py)).
+`bootstrap` needs no login: it asks `helper.nearprotocol.com` for a fresh `haat-xxxxxx.testnet` account and writes the account ids and keys it creates to `.env`, which is gitignored. If the helper is down or rate-limited, use `make localnet` instead. The hosted game runs the same binary (built for linux/arm64) in a small Docker container on an Oracle Cloud Always Free VM, behind Caddy for HTTPS, with the same settings as the Modal app. `make deploy` still hosts it on Modal instead (see [deploy/modal_app.py](deploy/modal_app.py)).
 
 ## How it works
 
