@@ -130,6 +130,7 @@ This is a testnet game and the operator has real powers, stated plainly:
 - No NEAR Intents and no social login (see above).
 - near-sandbox has no build for Intel Macs; use testnet there.
 - The hosted demo shares one village; fast-forward is capped per hour there to keep testnet spend low.
+- On mainnet the village would need a gas budget per player, shopkeeper keys held somewhere safer than one `.env` file, and a social login once one works without a wallet SDK.
 
 ## Built with
 
